@@ -9,7 +9,9 @@ This repository contains scripts to create the most minimal MongoDB Docker image
 - Runs MongoDB as the mongodb user for proper security
 - Configures MongoDB for remote access (for use with MongoDB Compass)
 - Includes only the MongoDB server - no shell, no utilities
-- Comes with a pre-configured admin user for instant use
+- Comes with a configurable admin user
+- Provides proper signal handling for graceful container shutdown
+- Includes health check for container monitoring
 - Avoids using Dockerfile for a more streamlined build process
 
 ## The Minimization Approach
@@ -25,15 +27,15 @@ Our scripts use a three-phase minimization approach:
    - No shell, no mongosh, no utilities of any kind
    
 2. **Filesystem Cleanup**:
-   - Removes the entire filesystem with `rm -rf /*`
-   - Eliminates all unnecessary files and directories
+   - Performs targeted removal of unnecessary files and directories
+   - Eliminates all unneeded components
    
 3. **Minimal Reconstruction**:
    - Rebuilds with only the exact files needed for the MongoDB server
    - Creates a minimal root filesystem with only required paths
    - Uses standard MongoDB UID/GID (999) for proper permissions
    - Creates minimal configuration files
-   - Pre-configures an admin user for immediate use
+   - Pre-configures an admin user with customizable credentials
    - Results in a highly optimized image
 
 ## Scripts
@@ -60,15 +62,21 @@ Both scripts produce identical Docker images.
 # Make the script executable
 chmod +x build-minimal-mongodb.sh
 
-# Run the script
+# Run the script with default settings (MongoDB 6.0, admin/mongoadmin credentials)
 ./build-minimal-mongodb.sh
+
+# Or specify custom MongoDB version and credentials
+./build-minimal-mongodb.sh 7.0 myadmin mysecretpassword
 ```
 
 ### Windows
 
 ```batch
-# Run the script
+# Run the script with default settings
 build-minimal-mongodb.bat
+
+# Or specify custom MongoDB version and credentials
+build-minimal-mongodb.bat 7.0 myadmin mysecretpassword
 ```
 
 ## Running the MongoDB Container
@@ -79,24 +87,24 @@ After building the image, you can run it with:
 docker run -d -p 27017:27017 --name mongodb minimal-mongodb:latest
 ```
 
-## Pre-Configured Admin User
+## Admin User
 
-The image comes with a pre-configured admin user with the following credentials:
+The image comes with a pre-configured admin user with credentials that can be customized during build. By default:
 
 - **Username**: admin
 - **Password**: mongoadmin
 
-**IMPORTANT**: For security reasons, you should change this password immediately after the first login.
+**IMPORTANT**: For security reasons, you should change this password immediately after the first login or specify a secure password when building the image.
 
 ## Connecting with MongoDB Compass
 
-Connect to your MongoDB instance using MongoDB Compass with the following connection string:
+Connect to your MongoDB instance using MongoDB Compass with the following connection string (replace with your custom credentials if specified during build):
 
 ```
 mongodb://admin:mongoadmin@localhost:27017/admin
 ```
 
-After connecting, you should immediately change the admin password:
+After connecting, you should immediately change the admin password if using defaults:
 
 1. Go to the "admin" database
 2. Click on "Users" collection
@@ -119,6 +127,14 @@ docker run -d -p 27017:27017 \
   -v mongodb-data:/var/lib/mongodb \
   -v mongodb-logs:/var/log/mongodb \
   --name mongodb minimal-mongodb:latest
+```
+
+## Health Checks
+
+The image includes a Docker HEALTHCHECK that verifies MongoDB is operating correctly. You can monitor the health status with:
+
+```bash
+docker inspect --format='{{.State.Health.Status}}' mongodb
 ```
 
 ## Troubleshooting

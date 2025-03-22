@@ -7,105 +7,92 @@ CONTAINER_ID=$(docker run -d debian:slim-bullseye sleep infinity)
 # Step 2: Install only the essential MongoDB dependencies and MongoDB itself
 docker exec $CONTAINER_ID bash -c '
 apt-get update
-apt-get install -y wget gnupg
+apt-get install -y wget gnupg binutils
 wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add -
 echo "deb http://repo.mongodb.org/apt/debian bullseye/mongodb-org/6.0 main" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list
 apt-get update
 apt-get install -y --no-install-recommends mongodb-org-server mongodb-org-shell
 apt-get clean
 
-# Step 3: EXTREME minimization - maximum deletion approach
-# First, identify and save the absolute essentials
-mkdir -p /mongodb-preserve
-cp /usr/bin/mongod /mongodb-preserve/
-cp /usr/bin/mongosh /mongodb-preserve/
+# Step 3: ULTRA-EXTREME minimization - nuclear approach
+mkdir -p /mongodb-minimal/{bin,lib,etc,var/lib/mongodb,var/log/mongodb,usr/share/zoneinfo/UTC,usr/share/zoneinfo/Etc,tmp,usr/bin}
 
-# Find and copy all required dynamic libraries
-for lib in $(ldd /usr/bin/mongod | grep -o "/[^ ]*" | sort -u); do
-  if [ -f "$lib" ]; then
-    dir=$(dirname "$lib")
-    mkdir -p "/mongodb-preserve$dir"
-    cp "$lib" "/mongodb-preserve$lib"
-  fi
+# Copy MongoDB binaries and strip them to minimum size
+cp /usr/bin/mongod /mongodb-minimal/usr/bin/
+strip --strip-all /mongodb-minimal/usr/bin/mongod
+cp /usr/bin/mongosh /mongodb-minimal/usr/bin/
+strip --strip-all /mongodb-minimal/usr/bin/mongosh
+
+# Essential: Add a minimal shell for emergency access
+cp /bin/busybox /mongodb-minimal/bin/ 2>/dev/null || cp /bin/dash /mongodb-minimal/bin/ 2>/dev/null || cp /bin/sh /mongodb-minimal/bin/
+
+# Find and copy ONLY required libraries with absolute paths
+for bin in /mongodb-minimal/usr/bin/mongod /mongodb-minimal/usr/bin/mongosh; do
+  for lib in $(ldd /usr/bin/$(basename $bin) | grep -o "/[^ ]*" | sort -u); do
+    if [ -f "$lib" ]; then
+      mkdir -p "/mongodb-minimal$(dirname "$lib")"
+      cp "$lib" "/mongodb-minimal$lib"
+      strip --strip-unneeded "/mongodb-minimal$lib"
+    fi
+  done
 done
 
-for lib in $(ldd /usr/bin/mongosh | grep -o "/[^ ]*" | sort -u); do
-  if [ -f "$lib" ]; then
-    dir=$(dirname "$lib")
-    mkdir -p "/mongodb-preserve$dir"
-    cp "$lib" "/mongodb-preserve$lib"
-  fi
+# Find and copy libraries required by libraries (recursive dependencies)
+for lib in $(find /mongodb-minimal -name "*.so*"); do
+  for dep in $(ldd $lib 2>/dev/null | grep -o "/[^ ]*" | sort -u); do
+    if [ -f "$dep" ] && [ ! -f "/mongodb-minimal$dep" ]; then
+      mkdir -p "/mongodb-minimal$(dirname "$dep")"
+      cp "$dep" "/mongodb-minimal$dep"
+      strip --strip-unneeded "/mongodb-minimal$dep"
+    fi
+  done
 done
 
-# Save minimal configuration directories
-mkdir -p /mongodb-preserve/etc
-mkdir -p /mongodb-preserve/var/lib/mongodb
-mkdir -p /mongodb-preserve/var/log/mongodb
-mkdir -p /mongodb-preserve/tmp
-mkdir -p /mongodb-preserve/usr/share/zoneinfo/UTC
-mkdir -p /mongodb-preserve/usr/share/zoneinfo/Etc
+# Copy only the absolutely essential timezone data (MongoDB needs this)
+cp -r /usr/share/zoneinfo/UTC /mongodb-minimal/usr/share/zoneinfo/
+cp -r /usr/share/zoneinfo/Etc /mongodb-minimal/usr/share/zoneinfo/
 
-# Copy timezone data (MongoDB needs this)
-cp -r /usr/share/zoneinfo/UTC /mongodb-preserve/usr/share/zoneinfo/
-cp -r /usr/share/zoneinfo/Etc /mongodb-preserve/usr/share/zoneinfo/
-
-# Create MongoDB user backup
-grep "^mongodb:" /etc/passwd > /mongodb-preserve/passwd
-grep "^mongodb:" /etc/group > /mongodb-preserve/group
-
-# Save minimal MongoDB configuration
-cat > /mongodb-preserve/mongod.conf << EOF
-# mongod.conf
-
-# Where and how to store data.
+# Create minimal MongoDB configuration
+cat > /mongodb-minimal/etc/mongod.conf << EOF
+# mongod.conf - absolute minimal configuration
 storage:
   dbPath: /var/lib/mongodb
   journal:
     enabled: true
-
-# Where to write logging data.
 systemLog:
   destination: file
-  logAppend: true
   path: /var/log/mongodb/mongod.log
-
-# Network interfaces
+  logAppend: true
 net:
   port: 27017
   bindIp: 0.0.0.0
-
-# Process management options
 processManagement:
   timeZoneInfo: /usr/share/zoneinfo
   fork: false
-
-# Security settings
 security:
   authorization: enabled
 EOF
 
-# Now REMOVE EVERYTHING except core directories
-rm -rf /bin/* /sbin/* /usr/bin/* /usr/sbin/* /usr/local/bin/* /usr/local/sbin/*
-rm -rf /etc/*
-rm -rf /usr/share/*
-rm -rf /usr/lib/*
-rm -rf /var/lib/*
-rm -rf /var/cache/*
-rm -rf /var/log/*
-rm -rf /tmp/*
-rm -rf /root/*
-rm -rf /home/*
+# Create passwd entry for MongoDB user (uid 999 is common for mongodb)
+echo "mongodb:x:999:999:mongodb user:/var/lib/mongodb:/bin/false" > /mongodb-minimal/etc/passwd
+echo "mongodb:x:999:" > /mongodb-minimal/etc/group
 
-# Restore only what MongoDB needs from our preserved copies
-cp -r /mongodb-preserve/* /
-cat /mongodb-preserve/passwd >> /etc/passwd
-cat /mongodb-preserve/group >> /etc/group
-mv /mongod.conf /etc/mongod.conf
+# Create an empty /etc/nsswitch.conf to avoid getpwnam issues
+echo "passwd: files" > /mongodb-minimal/etc/nsswitch.conf
+echo "group: files" >> /mongodb-minimal/etc/nsswitch.conf
+
+# Create a bare minimum root directory
+mkdir -p /mongodb-minimal/root
+
+# NUKE EVERYTHING, then restore only our minimal copy
+rm -rf /* 2>/dev/null || true
+mv /mongodb-minimal/* /
+rm -rf /mongodb-minimal
+
+# Set proper permissions
 chmod 755 /usr/bin/mongod /usr/bin/mongosh
-chown -R mongodb:mongodb /var/lib/mongodb /var/log/mongodb
-
-# Clean up preservation directory
-rm -rf /mongodb-preserve
+mkdir -p /var/lib/mongodb /var/log/mongodb
+chown -R 999:999 /var/lib/mongodb /var/log/mongodb
 '
 
 # Step 4: Export the container as a new image with direct mongod command

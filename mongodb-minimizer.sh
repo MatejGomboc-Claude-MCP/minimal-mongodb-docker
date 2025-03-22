@@ -162,29 +162,9 @@ minimize_mongodb() {
   openssl rand -base64 756 > /mongodb-minimal/etc/mongodb/keyfile
   chmod 400 /mongodb-minimal/etc/mongodb/keyfile
 
-  # Create a MongoDB config file for initialization without auth
-  echo "Creating temporary MongoDB configuration file..."
-  mkdir -p /var/lib/mongodb /var/log/mongodb
-  cat > /tmp/mongod-init.conf << EOF
-storage:
-  dbPath: /var/lib/mongodb
-  journal:
-    enabled: true
-systemLog:
-  destination: file
-  path: /var/log/mongodb/init.log
-  logAppend: true
-net:
-  port: 27017
-  bindIp: 0.0.0.0
-processManagement:
-  timeZoneInfo: /usr/share/zoneinfo
-  fork: false
-EOF
-
   # Start MongoDB temporarily to create admin user
   echo "Starting MongoDB to create admin user..."
-  mongod --fork --config /tmp/mongod-init.conf
+  mongod --fork --dbpath /var/lib/mongodb --logpath /var/log/mongodb/init.log --bind_ip_all
 
   # Wait for MongoDB to start properly - check process
   echo "Waiting for MongoDB process to start..."

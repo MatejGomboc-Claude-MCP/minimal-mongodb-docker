@@ -5,10 +5,10 @@ REM Step 1: Create a temporary container using a minimal Debian base
 FOR /F "tokens=*" %%i IN ('docker run -d debian:slim-bullseye sleep infinity') DO SET CONTAINER_ID=%%i
 
 REM Step 2: Install MongoDB and dependencies
-docker exec %CONTAINER_ID% bash -c "apt-get update && apt-get install -y wget gnupg && wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add - && echo \"deb http://repo.mongodb.org/apt/debian bullseye/mongodb-org/6.0 main\" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list && apt-get update && apt-get install -y --no-install-recommends mongodb-org-server mongodb-org-shell && apt-get clean && rm -rf /var/lib/apt/lists/*"
+docker exec %CONTAINER_ID% bash -c "apt-get update && apt-get install -y wget gnupg && wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add - && echo \"deb http://repo.mongodb.org/apt/debian bullseye/mongodb-org/6.0 main\" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list && apt-get update && apt-get install -y --no-install-recommends mongodb-org-server mongodb-org-shell && apt-get clean"
 
-REM Step 3: Remove unnecessary files
-docker exec %CONTAINER_ID% bash -c "rm -rf /usr/share/doc /usr/share/man /tmp/* /var/tmp/* /var/cache/apt/*"
+REM Step 3: Advanced cleanup to create truly minimal image
+docker exec %CONTAINER_ID% bash -c "apt-get -y --purge autoremove && apt-get -y --purge remove gnupg wget && rm -rf /var/lib/apt /var/lib/dpkg && rm -rf /usr/share/doc /usr/share/man /usr/share/info && rm -rf /usr/share/locale/* && rm -rf /var/cache/* /var/tmp/* /tmp/* && rm -rf /usr/share/common-licenses && rm -rf /usr/share/pixmaps /usr/share/applications && find /var/log -type f -delete && find /usr/share/zoneinfo -mindepth 1 -maxdepth 1 -type d -not -name UTC -not -name Etc -exec rm -rf {} \; && find /usr/bin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true && find /usr/sbin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true && find /bin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true && find /sbin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true"
 
 REM Step 4: Use default Debian MongoDB configuration and set permissions
 docker exec %CONTAINER_ID% bash -c "mkdir -p /var/log/mongodb && mkdir -p /var/lib/mongodb && chown -R mongodb:mongodb /var/lib/mongodb /var/log/mongodb"

@@ -1,15 +1,30 @@
 # Minimal MongoDB Docker Image
 
-This repository contains scripts to create a minimalist MongoDB Docker image using standard Debian paths. The approach focuses on creating the smallest possible functional MongoDB image while maintaining compatibility with MongoDB client tools like Compass.
+This repository contains scripts to create an extremely minimalist MongoDB Docker image using standard Debian paths. The approach focuses on creating the absolute smallest possible functional MongoDB image while maintaining compatibility with MongoDB client tools like Compass.
 
 ## Features
 
-- Creates a minimal MongoDB container based on Debian slim
+- Creates a ultra-minimal MongoDB container based on Debian slim
 - Uses standard Debian file paths for MongoDB
 - Runs MongoDB as the mongodb user for proper security
 - Configures MongoDB for remote access (for use with MongoDB Compass)
-- Eliminates unnecessary components to reduce image size
+- Aggressively removes all unnecessary components to minimize image size
 - Avoids using Dockerfile for a more streamlined build process
+
+## Minimization Steps
+
+The scripts use several techniques to create a truly minimal image:
+
+1. Starting with a minimal Debian base image
+2. Installing only essential MongoDB components
+3. Removing package management tools after installation
+4. Stripping all binaries to reduce their size
+5. Removing all unnecessary files and directories:
+   - Documentation, man pages, and locale data
+   - Package management files and caches
+   - Temporary files and log files
+   - Unnecessary timezone data (keeping only what MongoDB needs)
+   - Unneeded system utilities
 
 ## Scripts
 
@@ -17,6 +32,8 @@ Two scripts are provided:
 
 1. `build-minimal-mongodb.sh` - For Linux/macOS users
 2. `build-minimal-mongodb.bat` - For Windows users
+
+Both scripts produce identical Docker images.
 
 ## Usage
 

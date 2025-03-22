@@ -30,7 +30,7 @@ echo "- Admin password: $MONGODB_PASSWORD"
 
 # Step 1: Create a temporary container using a minimal Debian base
 echo "Creating temporary container..."
-CONTAINER_ID=$(docker run -d debian:sbookworm-slim sleep infinity)
+CONTAINER_ID=$(docker run -d debian:bookworm-slim sleep infinity)
 
 # Check container is running
 docker ps | grep -q $CONTAINER_ID || {

@@ -70,8 +70,14 @@ minimize_mongodb() {
   # Install essential packages to ensure they are available
   apt-get install -y --no-install-recommends coreutils netcat-openbsd
 
+  # Prepare temporary directory structure
+  echo "Creating temporary directory..."
+  TEMP_DIR="/tmp/mongodb-minimal"
+  rm -rf "$TEMP_DIR" 2>/dev/null || true
+  mkdir -p "$TEMP_DIR"
+
   # Create minimization directory structure
-  mkdir -p /mongodb-minimal/{etc,var/lib/mongodb,var/log/mongodb,usr/share/zoneinfo,tmp,usr/bin}
+  mkdir -p "$TEMP_DIR"/{etc,var/lib/mongodb,var/log/mongodb,usr/share/zoneinfo,tmp,usr/bin}
 
   # Copy MongoDB binary and strip it
   echo "Copying and stripping MongoDB binary..."
@@ -80,42 +86,45 @@ minimize_mongodb() {
     echo "ERROR: mongod executable not found!"
     exit 1
   fi
-  cp "$MONGOD_PATH" /mongodb-minimal/usr/bin/
-  strip --strip-all /mongodb-minimal/usr/bin/mongod
+  cp "$MONGOD_PATH" "$TEMP_DIR/usr/bin/"
+  strip --strip-all "$TEMP_DIR/usr/bin/mongod"
 
-  # Find and copy required libraries
+  # Find and copy required libraries to the TEMP_DIR
   echo "Identifying and copying required libraries..."
   for lib in $(ldd "$MONGOD_PATH" | grep -o "/[^ ]*" | sort -u); do
       if [ -f "$lib" ]; then
-          mkdir -p "/mongodb-minimal$(dirname "$lib")"
-          cp "$lib" "/mongodb-minimal$lib"
-          strip --strip-all "/mongodb-minimal$lib" 2>/dev/null || true
+          lib_dir="$(dirname "$lib")"
+          mkdir -p "$TEMP_DIR$lib_dir"
+          cp "$lib" "$TEMP_DIR$lib"
+          strip --strip-all "$TEMP_DIR$lib" 2>/dev/null || true
       fi
   done
 
-  # Find and copy recursive dependencies
+  # Find and copy recursive dependencies to the TEMP_DIR
   echo "Resolving recursive dependencies..."
-  for lib in $(find /mongodb-minimal -name "*.so*"); do
+  for lib in $(find "$TEMP_DIR" -name "*.so*"); do
       for dep in $(ldd "$lib" 2>/dev/null | grep -o "/[^ ]*" | sort -u); do
-          if [ -f "$dep" ] && [ ! -f "/mongodb-minimal$dep" ]; then
-              mkdir -p "/mongodb-minimal$(dirname "$dep")"
-              cp "$dep" "/mongodb-minimal$dep"
-              strip --strip-all "/mongodb-minimal$dep" 2>/dev/null || true
+          if [ -f "$dep" ] && [ ! -f "$TEMP_DIR$dep" ]; then
+              dep_dir="$(dirname "$dep")"
+              mkdir -p "$TEMP_DIR$dep_dir"
+              cp "$dep" "$TEMP_DIR$dep"
+              strip --strip-all "$TEMP_DIR$dep" 2>/dev/null || true
           fi
       done
   done
 
   # Additional dependency handling to catch dynamically loaded libraries
   echo "Checking for dynamically loaded libraries..."
-  for so in $(find /mongodb-minimal -name "*.so*"); do
+  for so in $(find "$TEMP_DIR" -name "*.so*"); do
     # Extract direct references from the .so file
     for ref in $(objdump -p "$so" 2>/dev/null | grep NEEDED | awk '{print $2}'); do
       # Find the full path of each referenced library
       full_path=$(find /lib /usr/lib -name "$ref" | head -1)
-      if [ -n "$full_path" ] && [ ! -f "/mongodb-minimal$full_path" ]; then
-        mkdir -p "/mongodb-minimal$(dirname "$full_path")"
-        cp "$full_path" "/mongodb-minimal$full_path"
-        strip --strip-all "/mongodb-minimal$full_path" 2>/dev/null || true
+      if [ -n "$full_path" ] && [ ! -f "$TEMP_DIR$full_path" ]; then
+        full_path_dir="$(dirname "$full_path")"
+        mkdir -p "$TEMP_DIR$full_path_dir"
+        cp "$full_path" "$TEMP_DIR$full_path"
+        strip --strip-all "$TEMP_DIR$full_path" 2>/dev/null || true
       fi
     done
   done
@@ -123,13 +132,13 @@ minimize_mongodb() {
   # Copy only the absolutely essential timezone data (MongoDB needs this)
   echo "Copying essential timezone data..."
   if [ -d /usr/share/zoneinfo/UTC ]; then
-    cp -r /usr/share/zoneinfo/UTC /mongodb-minimal/usr/share/zoneinfo/
+    cp -r /usr/share/zoneinfo/UTC "$TEMP_DIR/usr/share/zoneinfo/"
   else
     echo "WARNING: UTC timezone data not found!"
   fi
   
   if [ -d /usr/share/zoneinfo/Etc ]; then
-    cp -r /usr/share/zoneinfo/Etc /mongodb-minimal/usr/share/zoneinfo/
+    cp -r /usr/share/zoneinfo/Etc "$TEMP_DIR/usr/share/zoneinfo/"
   else
     echo "WARNING: Etc timezone data not found!"
   fi
@@ -145,22 +154,19 @@ minimize_mongodb() {
   # Check for existing MongoDB process before starting
   if pgrep -x mongod > /dev/null; then
     echo "WARNING: MongoDB is already running. Stopping it first..."
-    if ! mongod --dbpath /var/lib/mongodb --shutdown; then
-      echo "WARNING: Failed to stop existing MongoDB process gracefully, trying pkill..."
-      pkill -x mongod 2>/dev/null || true
-      sleep 2
-      if pgrep -x mongod > /dev/null; then
-        echo "ERROR: Unable to stop existing MongoDB process!"
-        exit 1
-      fi
+    pkill -9 -x mongod 2>/dev/null || true
+    sleep 2
+    if pgrep -x mongod > /dev/null; then
+      echo "ERROR: Unable to stop existing MongoDB process!"
+      exit 1
     fi
   fi
 
   # Create keyfile for authentication
   echo "Creating MongoDB keyfile..."
-  mkdir -p /mongodb-minimal/etc/mongodb
-  openssl rand -base64 756 > /mongodb-minimal/etc/mongodb/keyfile
-  chmod 400 /mongodb-minimal/etc/mongodb/keyfile
+  mkdir -p "$TEMP_DIR/etc/mongodb"
+  openssl rand -base64 756 > "$TEMP_DIR/etc/mongodb/keyfile"
+  chmod 400 "$TEMP_DIR/etc/mongodb/keyfile"
 
   # Start MongoDB temporarily to create admin user
   echo "Starting MongoDB to create admin user..."
@@ -255,16 +261,12 @@ minimize_mongodb() {
   
   # Copy the pre-initialized data files to ensure admin user exists
   echo "Copying initialized MongoDB data files..."
-  mkdir -p /mongodb-minimal/var/lib/mongodb
-  if ! cp -a /var/lib/mongodb/* /mongodb-minimal/var/lib/mongodb/ 2>/dev/null; then
-    echo "WARNING: Some MongoDB data files could not be copied. Trying with specific permissions..."
-    # Try with more permissions
-    find /var/lib/mongodb -type f -exec cp -f {} /mongodb-minimal/var/lib/mongodb/ \; 2>/dev/null || true
-  fi
+  mkdir -p "$TEMP_DIR/var/lib/mongodb"
+  cp -a /var/lib/mongodb/* "$TEMP_DIR/var/lib/mongodb/" 2>/dev/null || true
 
   # Create absolute minimal MongoDB configuration with authentication enabled
   echo "Creating MongoDB configuration file..."
-  cat > /mongodb-minimal/etc/mongod.conf << 'EOF'
+  cat > "$TEMP_DIR/etc/mongod.conf" << 'EOF'
 storage:
   dbPath: /var/lib/mongodb
   journal:
@@ -286,64 +288,40 @@ EOF
 
   # Create passwd entry for MongoDB user (uid 999 is common for mongodb)
   echo "Creating user entries..."
-  echo "mongodb:x:999:999::/var/lib/mongodb:/" > /mongodb-minimal/etc/passwd
-  echo "mongodb:x:999:" > /mongodb-minimal/etc/group
+  echo "mongodb:x:999:999::/var/lib/mongodb:/" > "$TEMP_DIR/etc/passwd"
+  echo "mongodb:x:999:" > "$TEMP_DIR/etc/group"
 
   # Create an empty /etc/nsswitch.conf to avoid getpwnam issues
   echo "Creating nsswitch.conf..."
-  echo "passwd: files" > /mongodb-minimal/etc/nsswitch.conf
-  echo "group: files" >> /mongodb-minimal/etc/nsswitch.conf
+  echo "passwd: files" > "$TEMP_DIR/etc/nsswitch.conf"
+  echo "group: files" >> "$TEMP_DIR/etc/nsswitch.conf"
 
   # Ensure the log directory exists and has proper permissions
-  mkdir -p /mongodb-minimal/var/log/mongodb
-  chmod 750 /mongodb-minimal/var/log/mongodb
+  mkdir -p "$TEMP_DIR/var/log/mongodb"
+  chmod 750 "$TEMP_DIR/var/log/mongodb"
   
-  # Directly move files from minimal directory to root
-  echo "Moving minimal files to root filesystem..."
-  cd /mongodb-minimal || { echo "ERROR: Cannot change to directory /mongodb-minimal"; exit 1; }
-
-  # Save current IFS, set to newline only to handle filenames with spaces
-  OLDIFS="$IFS"
-  IFS=$'\n'
-  
-  # For each directory under /mongodb-minimal, copy its contents to the root
-  # Using a more reliable method for handling spaces in filenames
-  find . -mindepth 1 -maxdepth 1 -type d -print0 | while IFS= read -r -d $'\0' dir; do
-    dir="${dir#./}"
-    # Ensure target directory exists
-    mkdir -p "/$dir"
-    
-    # Handle potential spaces in filenames with null-terminated strings
-    find "./$dir" -mindepth 1 -print0 | while IFS= read -r -d $'\0' item; do
-      target_path="/${item#./}"
-      target_dir="$(dirname "$target_path")"
-      mkdir -p "$target_dir"
-      if ! cp -a "$item" "$target_path" 2>/dev/null; then
-        echo "WARNING: Failed to copy $item to $target_path"
-      fi
-    done
-  done
-  
-  # Move any files in the root of /mongodb-minimal
-  find . -maxdepth 1 -type f -print0 | while IFS= read -r -d $'\0' file; do
-    file="${file#./}"
-    if ! cp -a "$file" "/$file" 2>/dev/null; then
-      echo "WARNING: Failed to copy $file to /$file"
-    fi
-  done
-  
-  # Restore original IFS
-  IFS="$OLDIFS"
-  
-  # Return to root and remove the temporary directory
-  cd / || { echo "ERROR: Cannot change to root directory"; exit 1; }
-  rm -rf /mongodb-minimal
-
   # Set proper permissions
   echo "Setting final permissions..."
-  chmod 755 /usr/bin/mongod
-  chmod 400 /etc/mongodb/keyfile
+  chmod 755 "$TEMP_DIR/usr/bin/mongod"
+  chmod 400 "$TEMP_DIR/etc/mongodb/keyfile"
+  
+  # Create a tar archive of all files to preserve permissions
+  echo "Creating tar archive of all files..."
+  cd "$TEMP_DIR" || { echo "ERROR: Cannot change to temporary directory"; exit 1; }
+  tar -cf /tmp/mongodb-minimal.tar .
+  
+  # Extract the tar archive to the root filesystem
+  echo "Extracting files to the root filesystem..."
+  cd / || { echo "ERROR: Cannot change to root directory"; exit 1; }
+  tar -xf /tmp/mongodb-minimal.tar
+  
+  # Set final ownership
+  echo "Setting final ownership..."
   chown -R 999:999 /var/lib/mongodb /var/log/mongodb /etc/mongodb/keyfile
+  
+  # Clean up temporary files
+  rm -f /tmp/mongodb-minimal.tar
+  rm -rf "$TEMP_DIR"
   
   echo "MongoDB minimization completed successfully."
   

@@ -16,151 +16,52 @@ echo - MongoDB version: %MONGODB_VERSION%
 echo - Admin username: %MONGODB_USERNAME%
 echo - Admin password: %MONGODB_PASSWORD%
 
-REM Create a temporary script file to avoid escaping issues
-SET TEMP_SCRIPT=%TEMP%\mongodb_build.sh
-(
-echo #!/bin/bash
-echo set -e
-echo
-echo # Test MongoDB installation
-echo if ! mongod --version; then
-echo   echo 'MongoDB installation failed!'
-echo   exit 1
-echo fi
-echo
-echo # Create minimization directory structure
-echo mkdir -p /mongodb-minimal/{etc,var/lib/mongodb,var/log/mongodb,usr/share/zoneinfo/UTC,usr/share/zoneinfo/Etc,tmp,usr/bin}
-echo
-echo # Copy MongoDB binary and strip it
-echo cp /usr/bin/mongod /mongodb-minimal/usr/bin/
-echo strip --strip-all /mongodb-minimal/usr/bin/mongod
-echo
-echo # Find and copy required libraries
-echo for lib in $^(ldd /usr/bin/mongod ^| grep -o "/[^ ]*" ^| sort -u^); do
-echo     if [ -f "$lib" ]; then
-echo         mkdir -p "/mongodb-minimal$^(dirname "$lib"^)"
-echo         cp "$lib" "/mongodb-minimal$lib"
-echo         strip --strip-all "/mongodb-minimal$lib"
-echo     fi
-echo done
-echo
-echo # Find and copy recursive dependencies
-echo for lib in $^(find /mongodb-minimal -name "*.so*"^); do
-echo     for dep in $^(ldd $lib 2^>/dev/null ^| grep -o "/[^ ]*" ^| sort -u^); do
-echo         if [ -f "$dep" ] ^&^& [ ! -f "/mongodb-minimal$dep" ]; then
-echo             mkdir -p "/mongodb-minimal$^(dirname "$dep"^)"
-echo             cp "$dep" "/mongodb-minimal$dep"
-echo             strip --strip-all "/mongodb-minimal$dep"
-echo         fi
-echo     done
-echo done
-echo
-echo # Additional dependency handling
-echo for so in $^(find /mongodb-minimal -name "*.so*"^); do
-echo   for ref in $^(objdump -p "$so" ^| grep NEEDED ^| awk '{print $2}'^); do
-echo     full_path=$^(find /lib /usr/lib -name "$ref" ^| head -1^)
-echo     if [ -n "$full_path" ] ^&^& [ ! -f "/mongodb-minimal$full_path" ]; then
-echo       mkdir -p "/mongodb-minimal$^(dirname "$full_path"^)"
-echo       cp "$full_path" "/mongodb-minimal$full_path"
-echo       strip --strip-all "/mongodb-minimal$full_path"
-echo     fi
-echo   done
-echo done
-echo
-echo # Copy timezone data
-echo cp -r /usr/share/zoneinfo/UTC /mongodb-minimal/usr/share/zoneinfo/
-echo cp -r /usr/share/zoneinfo/Etc /mongodb-minimal/usr/share/zoneinfo/
-echo
-echo # Create MongoDB configuration
-echo cat ^> /mongodb-minimal/etc/mongod.conf ^<^< EOF
-echo storage:
-echo     dbPath: /var/lib/mongodb
-echo     journal:
-echo         enabled: true
-echo systemLog:
-echo     destination: file
-echo     path: /var/log/mongodb/mongod.log
-echo     logAppend: true
-echo net:
-echo     port: 27017
-echo     bindIp: 0.0.0.0
-echo processManagement:
-echo     timeZoneInfo: /usr/share/zoneinfo
-echo     fork: false
-echo security:
-echo     authorization: enabled
-echo EOF
-echo
-echo # Create user entries
-echo echo "mongodb:x:999:999::/var/lib/mongodb:/" ^> /mongodb-minimal/etc/passwd
-echo echo "mongodb:x:999:" ^> /mongodb-minimal/etc/group
-echo echo "passwd: files" ^> /mongodb-minimal/etc/nsswitch.conf
-echo echo "group: files" ^>^> /mongodb-minimal/etc/nsswitch.conf
-echo
-echo # NUKE EVERYTHING, then restore only our minimal copy
-echo rm -rf /* 2^>/dev/null ^|^| true
-echo mv /mongodb-minimal/* /
-echo rm -rf /mongodb-minimal
-echo
-echo # Set proper permissions
-echo chmod 755 /usr/bin/mongod
-echo mkdir -p /var/lib/mongodb /var/log/mongodb
-echo chown -R 999:999 /var/lib/mongodb /var/log/mongodb
-echo
-echo # Start MongoDB temporarily without auth to create the admin user
-echo mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb
-echo
-echo # Verify MongoDB started correctly
-echo if ! pgrep -x mongod ^> /dev/null; then
-echo   echo 'MongoDB failed to start!'
-echo   cat /var/log/mongodb/init.log
-echo   exit 1
-echo fi
-echo
-echo # Create a default admin user with password
-echo mongod --eval "db = db.getSiblingDB^(\"admin\"^); db.createUser^({user:\"${MONGODB_USERNAME}\", pwd:\"${MONGODB_PASSWORD}\", roles:[{role:\"root\", db:\"admin\"}]}^)"
-echo
-echo # Stop the temporary MongoDB instance
-echo mongod --shutdown
-echo
-echo # Create a file indicating this is a pre-configured instance
-echo touch /var/lib/mongodb/.preconfigured
-) > %TEMP_SCRIPT%
-
 REM Step 1: Create container
 FOR /F "tokens=*" %%i IN ('docker run -d debian:bookworm-slim sleep infinity') DO SET CONTAINER_ID=%%i
-
 echo Container created: %CONTAINER_ID%
 
-REM Step 2: Install MongoDB dependencies
-echo Installing MongoDB %MONGODB_VERSION% and dependencies...
-docker exec %CONTAINER_ID% bash -c "apt-get update && apt-get install -y wget gnupg binutils && wget -qO - https://www.mongodb.org/static/pgp/server-%MONGODB_VERSION%.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/mongodb-%MONGODB_VERSION%.gpg && echo \"deb http://repo.mongodb.org/apt/debian bookworm/mongodb-org/%MONGODB_VERSION% main\" | tee /etc/apt/sources.list.d/mongodb-org-%MONGODB_VERSION%.list && apt-get update && apt-get install -y --no-install-recommends mongodb-org-server && apt-get clean"
+REM Step 2: Copy the minimizer script to the container
+echo Copying mongodb-minimizer.sh to container...
+docker cp "%~dp0mongodb-minimizer.sh" %CONTAINER_ID%:/tmp/mongodb-minimizer.sh
 
-REM Step 3: Perform minimization
-echo Performing MongoDB minimization...
+REM Step 3: Run the installation and minimization process
+echo Installing and minimizing MongoDB...
+docker exec -e MONGODB_VERSION=%MONGODB_VERSION% ^
+           -e MONGODB_USERNAME=%MONGODB_USERNAME% ^
+           -e MONGODB_PASSWORD=%MONGODB_PASSWORD% ^
+           -e OPERATION=all ^
+           %CONTAINER_ID% bash -c "chmod +x /tmp/mongodb-minimizer.sh && /tmp/mongodb-minimizer.sh"
 
-REM Copy and execute the build script
-docker cp %TEMP_SCRIPT% %CONTAINER_ID%:/tmp/build_script.sh
+REM Check for errors
+IF %ERRORLEVEL% NEQ 0 (
+  echo MongoDB installation or minimization failed!
+  docker stop %CONTAINER_ID%
+  docker rm %CONTAINER_ID%
+  exit /b 1
+)
 
-REM Replace variables in the script
-docker exec %CONTAINER_ID% bash -c "sed -i 's/\${MONGODB_USERNAME}/%MONGODB_USERNAME%/g' /tmp/build_script.sh"
-docker exec %CONTAINER_ID% bash -c "sed -i 's/\${MONGODB_PASSWORD}/%MONGODB_PASSWORD%/g' /tmp/build_script.sh"
+REM Step 4: Extract Docker commit options
+echo Getting Docker commit options...
+SET TEMP_COMMIT_FILE=%TEMP%\mongodb_commit_options.txt
+docker exec -e OPERATION=commit-options %CONTAINER_ID% bash -c "chmod +x /tmp/mongodb-minimizer.sh && /tmp/mongodb-minimizer.sh" > %TEMP_COMMIT_FILE%
 
-REM Execute the script
-docker exec %CONTAINER_ID% bash -c "chmod +x /tmp/build_script.sh && /tmp/build_script.sh"
+REM Step 5: Commit container with extracted options
+echo Creating minimal MongoDB image...
+SET COMMIT_CMD=docker commit
+FOR /F "tokens=*" %%a IN ('findstr /v "===" %TEMP_COMMIT_FILE% ^| findstr /v "^$"') DO (
+  SET COMMIT_CMD=!COMMIT_CMD! %%a
+)
+%COMMIT_CMD% %CONTAINER_ID% minimal-mongodb:latest
+IF %ERRORLEVEL% NEQ 0 (
+  echo Docker commit failed!
+  docker stop %CONTAINER_ID%
+  docker rm %CONTAINER_ID%
+  del %TEMP_COMMIT_FILE%
+  exit /b 1
+)
 
-REM Cleanup temp file
-del %TEMP_SCRIPT%
-
-REM Step 4: Export as new image with direct command and healthcheck
-docker commit --change="USER mongodb" ^
-    --change="CMD [\"mongod\", \"--config\", \"/etc/mongod.conf\"]" ^
-    --change="EXPOSE 27017" ^
-    --change="VOLUME [\"/var/lib/mongodb\", \"/var/log/mongodb\"]" ^
-    --change="HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD [ \"mongod\", \"--eval\", \"db.adminCommand('ping')\", \"--quiet\" ]" ^
-    %CONTAINER_ID% minimal-mongodb:latest
-
-REM Step 5: Cleanup
+REM Step 6: Clean up
+del %TEMP_COMMIT_FILE%
 docker stop %CONTAINER_ID%
 docker rm %CONTAINER_ID%
 

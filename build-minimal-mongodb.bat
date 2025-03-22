@@ -18,22 +18,22 @@ strip --strip-all /mongodb-minimal/usr/bin/mongod
 
 # Find and copy ONLY required libraries with absolute paths
 for lib in \$(ldd /usr/bin/mongod | grep -o \"/[^ ]*\" | sort -u); do
-  if [ -f \"\$lib\" ]; then
-    mkdir -p \"/mongodb-minimal\$(dirname \"\$lib\")\"
-    cp \"\$lib\" \"/mongodb-minimal\$lib\"
-    strip --strip-all \"/mongodb-minimal\$lib\"
-  fi
+    if [ -f \"\$lib\" ]; then
+        mkdir -p \"/mongodb-minimal\$(dirname \"\$lib\")\"
+        cp \"\$lib\" \"/mongodb-minimal\$lib\"
+        strip --strip-all \"/mongodb-minimal\$lib\"
+    fi
 done
 
 # Find and copy libraries required by libraries (recursive dependencies)
 for lib in \$(find /mongodb-minimal -name \"*.so*\"); do
-  for dep in \$(ldd \$lib 2>/dev/null | grep -o \"/[^ ]*\" | sort -u); do
-    if [ -f \"\$dep\" ] && [ ! -f \"/mongodb-minimal\$dep\" ]; then
-      mkdir -p \"/mongodb-minimal\$(dirname \"\$dep\")\"
-      cp \"\$dep\" \"/mongodb-minimal\$dep\"
-      strip --strip-all \"/mongodb-minimal\$dep\"
-    fi
-  done
+    for dep in \$(ldd \$lib 2>/dev/null | grep -o \"/[^ ]*\" | sort -u); do
+        if [ -f \"\$dep\" ] && [ ! -f \"/mongodb-minimal\$dep\" ]; then
+            mkdir -p \"/mongodb-minimal\$(dirname \"\$dep\")\"
+            cp \"\$dep\" \"/mongodb-minimal\$dep\"
+            strip --strip-all \"/mongodb-minimal\$dep\"
+        fi
+    done
 done
 
 # Copy only the absolutely essential timezone data (MongoDB needs this)
@@ -43,21 +43,21 @@ cp -r /usr/share/zoneinfo/Etc /mongodb-minimal/usr/share/zoneinfo/
 # Create absolute minimal MongoDB configuration
 cat > /mongodb-minimal/etc/mongod.conf << EOF
 storage:
-  dbPath: /var/lib/mongodb
-  journal:
-    enabled: true
+    dbPath: /var/lib/mongodb
+    journal:
+        enabled: true
 systemLog:
-  destination: file
-  path: /var/log/mongodb/mongod.log
-  logAppend: true
+    destination: file
+    path: /var/log/mongodb/mongod.log
+    logAppend: true
 net:
-  port: 27017
-  bindIp: 0.0.0.0
+    port: 27017
+    bindIp: 0.0.0.0
 processManagement:
-  timeZoneInfo: /usr/share/zoneinfo
-  fork: false
+    timeZoneInfo: /usr/share/zoneinfo
+    fork: false
 security:
-  authorization: enabled
+    authorization: enabled
 EOF
 
 # Create passwd entry for MongoDB user (uid 999 is common for mongodb)
@@ -94,10 +94,10 @@ touch /var/lib/mongodb/.preconfigured
 
 REM Step 4: Export as new image with direct mongod command
 docker commit --change="USER mongodb" ^
-              --change="CMD [\"mongod\", \"--config\", \"/etc/mongod.conf\"]" ^
-              --change="EXPOSE 27017" ^
-              --change="VOLUME [\"/var/lib/mongodb\", \"/var/log/mongodb\"]" ^
-              %CONTAINER_ID% minimal-mongodb:latest
+    --change="CMD [\"mongod\", \"--config\", \"/etc/mongod.conf\"]" ^
+    --change="EXPOSE 27017" ^
+    --change="VOLUME [\"/var/lib/mongodb\", \"/var/log/mongodb\"]" ^
+    %CONTAINER_ID% minimal-mongodb:latest
 
 REM Step 5: Cleanup
 docker stop %CONTAINER_ID%

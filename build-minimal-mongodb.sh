@@ -13,10 +13,31 @@ echo "deb http://repo.mongodb.org/apt/debian bullseye/mongodb-org/6.0 main" | te
 apt-get update
 apt-get install -y --no-install-recommends mongodb-org-server mongodb-org-shell
 apt-get clean
-rm -rf /var/lib/apt/lists/*
 
-# Step 3: Remove unnecessary files to reduce image size
-rm -rf /usr/share/doc /usr/share/man /tmp/* /var/tmp/* /var/cache/apt/*
+# Step 3: Advanced cleanup to create truly minimal image
+# Remove package management tools after installation
+apt-get -y --purge autoremove
+apt-get -y --purge remove gnupg wget
+rm -rf /var/lib/apt /var/lib/dpkg
+
+# Remove all unnecessary directories
+rm -rf /usr/share/doc /usr/share/man /usr/share/info
+rm -rf /usr/share/locale/*
+rm -rf /var/cache/* /var/tmp/* /tmp/*
+rm -rf /usr/share/common-licenses
+rm -rf /usr/share/pixmaps /usr/share/applications
+
+# Remove all log files except MongoDB log directory
+find /var/log -type f -delete
+
+# Keep only minimal zoneinfo data (MongoDB needs this)
+find /usr/share/zoneinfo -mindepth 1 -maxdepth 1 -type d -not -name UTC -not -name Etc -exec rm -rf {} \;
+
+# Strip binaries to reduce size
+find /usr/bin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true
+find /usr/sbin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true
+find /bin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true
+find /sbin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true
 '
 
 # Step 4: Use default Debian MongoDB configuration with minor adjustments

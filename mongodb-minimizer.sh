@@ -142,6 +142,20 @@ minimize_mongodb() {
   chmod 750 /var/lib/mongodb
   chmod 750 /var/log/mongodb
 
+  # Check for existing MongoDB process before starting
+  if pgrep -x mongod > /dev/null; then
+    echo "WARNING: MongoDB is already running. Stopping it first..."
+    if ! mongod --dbpath /var/lib/mongodb --shutdown; then
+      echo "WARNING: Failed to stop existing MongoDB process gracefully, trying pkill..."
+      pkill -x mongod 2>/dev/null || true
+      sleep 2
+      if pgrep -x mongod > /dev/null; then
+        echo "ERROR: Unable to stop existing MongoDB process!"
+        exit 1
+      fi
+    fi
+  fi
+
   # Start MongoDB temporarily to create admin user
   echo "Starting MongoDB to create admin user..."
   if ! mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb; then
@@ -268,7 +282,7 @@ EOF
   
   # Directly move files from minimal directory to root
   echo "Moving minimal files to root filesystem..."
-  cd /mongodb-minimal
+  cd /mongodb-minimal || { echo "ERROR: Cannot change to directory /mongodb-minimal"; exit 1; }
 
   # Save current IFS, set to newline only to handle filenames with spaces
   OLDIFS="$IFS"
@@ -304,7 +318,7 @@ EOF
   IFS="$OLDIFS"
   
   # Return to root and remove the temporary directory
-  cd /
+  cd / || { echo "ERROR: Cannot change to root directory"; exit 1; }
   rm -rf /mongodb-minimal
 
   # Set proper permissions
@@ -339,6 +353,7 @@ EOF
   echo "Checking library dependencies..."
   if ! ldd /usr/bin/mongod >/dev/null 2>&1; then
     echo "ERROR: MongoDB binary has unresolved dependencies!"
+    ldd /usr/bin/mongod
     exit 1
   fi
   

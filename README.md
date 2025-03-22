@@ -13,6 +13,7 @@ This repository contains scripts to create the most minimal MongoDB Docker image
 - Includes health check for container monitoring
 - Supports custom MongoDB versions
 - Avoids using Dockerfile for a more streamlined build process
+- **Absolutely no shell in the final image for maximum security**
 
 ## Benefits for Single Board Computers and Resource-Constrained Environments
 
@@ -31,6 +32,7 @@ Specific advantages include:
 - **Lower thermal impact**: Reduced processing overhead can help minimize heat generation in passively cooled devices
 - **Improved battery life**: For portable or battery-powered deployments, the efficiency gains translate to longer operating times
 - **Practical for microservices**: Makes MongoDB viable in highly distributed architectures even on modest hardware
+- **Enhanced security**: No shell means reduced attack surface for potential exploits
 
 ## The Minimization Approach
 

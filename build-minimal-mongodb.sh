@@ -132,30 +132,6 @@ echo \"mongodb:x:999:\" > /mongodb-minimal/etc/group
 echo \"passwd: files\" > /mongodb-minimal/etc/nsswitch.conf
 echo \"group: files\" >> /mongodb-minimal/etc/nsswitch.conf
 
-# Create a simple init script for MongoDB with proper signal handling
-cat > /mongodb-minimal/usr/bin/mongodb-entrypoint.sh << 'ENTRYPOINT'
-#!/bin/bash
-set -e
-
-# MongoDB configuration location
-CONFIG=/etc/mongod.conf
-
-# Function to properly shutdown MongoDB
-shutdown_mongodb() {
-  echo \"Received shutdown signal, stopping MongoDB gracefully...\"
-  mongod --shutdown
-  exit 0
-}
-
-# Set up signal trapping
-trap shutdown_mongodb SIGTERM SIGINT
-
-# Start MongoDB in foreground
-exec mongod --config \$CONFIG
-ENTRYPOINT
-
-chmod +x /mongodb-minimal/usr/bin/mongodb-entrypoint.sh
-
 # TARGETED cleanup instead of rm -rf /*
 for dir in /bin /boot /home /mnt /opt /root /run /sbin /srv /usr /etc /lib /lib64 /media; do
   if [ -d \"\$dir\" ] && [ \"\$dir\" != \"/mongodb-minimal\" ]; then
@@ -169,7 +145,6 @@ rm -rf /mongodb-minimal
 
 # Set proper permissions
 chmod 755 /usr/bin/mongod
-chmod 755 /usr/bin/mongodb-entrypoint.sh
 mkdir -p /var/lib/mongodb /var/log/mongodb
 chown -R 999:999 /var/lib/mongodb /var/log/mongodb
 
@@ -195,12 +170,12 @@ mongod --shutdown
 touch /var/lib/mongodb/.preconfigured
 "
 
-# Step 4: Export the container as a new image with entrypoint script
+# Step 4: Export the container as a new image with direct mongod command
 docker commit --change='USER mongodb' \
-    --change='CMD ["/usr/bin/mongodb-entrypoint.sh"]' \
+    --change='CMD ["mongod", "--config", "/etc/mongod.conf"]' \
     --change='EXPOSE 27017' \
     --change='VOLUME ["/var/lib/mongodb", "/var/log/mongodb"]' \
-    --change='HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD mongosh admin --eval "db.adminCommand(\'ping\')" --quiet || exit 1' \
+    --change='HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD [ "mongod", "--eval", "db.adminCommand(\'ping\')", "--quiet" ]' \
     $CONTAINER_ID minimal-mongodb:latest
 
 # Step 5: Clean up

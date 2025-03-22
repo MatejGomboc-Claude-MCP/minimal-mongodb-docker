@@ -97,30 +97,6 @@ echo echo "mongodb:x:999:" ^> /mongodb-minimal/etc/group
 echo echo "passwd: files" ^> /mongodb-minimal/etc/nsswitch.conf
 echo echo "group: files" ^>^> /mongodb-minimal/etc/nsswitch.conf
 echo
-echo # Create entrypoint script
-echo cat ^> /mongodb-minimal/usr/bin/mongodb-entrypoint.sh ^<^< 'ENTRYPOINT'
-echo #!/bin/bash
-echo set -e
-echo
-echo # MongoDB configuration location
-echo CONFIG=/etc/mongod.conf
-echo
-echo # Function to properly shutdown MongoDB
-echo shutdown_mongodb^(^) {
-echo   echo "Received shutdown signal, stopping MongoDB gracefully..."
-echo   mongod --shutdown
-echo   exit 0
-echo }
-echo
-echo # Set up signal trapping
-echo trap shutdown_mongodb SIGTERM SIGINT
-echo
-echo # Start MongoDB in foreground
-echo exec mongod --config $CONFIG
-echo ENTRYPOINT
-echo
-echo chmod +x /mongodb-minimal/usr/bin/mongodb-entrypoint.sh
-echo
 echo # TARGETED cleanup instead of rm -rf /*
 echo for dir in /bin /boot /home /mnt /opt /root /run /sbin /srv /usr /etc /lib /lib64 /media; do
 echo   if [ -d "$dir" ] ^&^& [ "$dir" != "/mongodb-minimal" ]; then
@@ -134,7 +110,6 @@ echo rm -rf /mongodb-minimal
 echo
 echo # Set proper permissions
 echo chmod 755 /usr/bin/mongod
-echo chmod 755 /usr/bin/mongodb-entrypoint.sh
 echo mkdir -p /var/lib/mongodb /var/log/mongodb
 echo chown -R 999:999 /var/lib/mongodb /var/log/mongodb
 echo
@@ -183,12 +158,12 @@ docker exec %CONTAINER_ID% bash -c "chmod +x /tmp/build_script.sh && /tmp/build_
 REM Cleanup temp file
 del %TEMP_SCRIPT%
 
-REM Step 4: Export as new image with proper entrypoint and healthcheck
+REM Step 4: Export as new image with direct command and healthcheck
 docker commit --change="USER mongodb" ^
-    --change="CMD [\"/usr/bin/mongodb-entrypoint.sh\"]" ^
+    --change="CMD [\"mongod\", \"--config\", \"/etc/mongod.conf\"]" ^
     --change="EXPOSE 27017" ^
     --change="VOLUME [\"/var/lib/mongodb\", \"/var/log/mongodb\"]" ^
-    --change="HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD mongosh admin --eval \"db.adminCommand('ping')\" --quiet || exit 1" ^
+    --change="HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD [ \"mongod\", \"--eval\", \"db.adminCommand('ping')\", \"--quiet\" ]" ^
     %CONTAINER_ID% minimal-mongodb:latest
 
 REM Step 5: Cleanup

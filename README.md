@@ -10,7 +10,6 @@ This repository contains scripts to create the most minimal MongoDB Docker image
 - Configures MongoDB for remote access (for use with MongoDB Compass)
 - Includes only the MongoDB server - no shell, no utilities
 - Comes with a configurable admin user
-- Provides proper signal handling for graceful container shutdown
 - Includes health check for container monitoring
 - Avoids using Dockerfile for a more streamlined build process
 

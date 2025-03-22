@@ -132,24 +132,8 @@ echo \"mongodb:x:999:\" > /mongodb-minimal/etc/group
 echo \"passwd: files\" > /mongodb-minimal/etc/nsswitch.conf
 echo \"group: files\" >> /mongodb-minimal/etc/nsswitch.conf
 
-# TARGETED cleanup instead of rm -rf /*
-for dir in /bin /boot /home /mnt /opt /root /run /sbin /srv /usr /etc /lib /lib64 /media; do
-  if [ -d \"\$dir\" ] && [ \"\$dir\" != \"/mongodb-minimal\" ]; then
-    find \"\$dir\" -mindepth 1 -maxdepth 1 -not -path \"/usr/bin/mongod\" | xargs rm -rf
-  fi
-done
-
-# Move our minimal files into place
-cp -a /mongodb-minimal/* /
-rm -rf /mongodb-minimal
-
-# Set proper permissions
-chmod 755 /usr/bin/mongod
-mkdir -p /var/lib/mongodb /var/log/mongodb
-chown -R 999:999 /var/lib/mongodb /var/log/mongodb
-
 # Create JavaScript initialization file with user creation logic
-cat > /var/lib/mongodb/init.js << EOF
+cat > /mongodb-minimal/var/lib/mongodb/init.js << EOF
 db = db.getSiblingDB(\"admin\");
 db.createUser({
   user: \"${MONGODB_USERNAME}\",
@@ -158,8 +142,18 @@ db.createUser({
 });
 EOF
 
-# Create a flag file that will trigger initialization on first container start
+# NUKE EVERYTHING, then restore only our minimal copy
+rm -rf /* 2>/dev/null || true
+mv /mongodb-minimal/* /
+rm -rf /mongodb-minimal
+
+# Set proper permissions
+chmod 755 /usr/bin/mongod
+mkdir -p /var/lib/mongodb /var/log/mongodb
+chown -R 999:999 /var/lib/mongodb /var/log/mongodb
 chown 999:999 /var/lib/mongodb/init.js
+
+# Create a flag file that will trigger initialization on first container start
 touch /var/lib/mongodb/.initialized
 chown 999:999 /var/lib/mongodb/.initialized
 "

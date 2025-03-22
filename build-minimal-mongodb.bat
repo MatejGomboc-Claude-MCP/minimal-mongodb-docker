@@ -33,13 +33,17 @@ REM Step 2: Copy the minimizer script to the container
 echo Copying mongodb-minimizer.sh to container...
 docker cp "%~dp0mongodb-minimizer.sh" %CONTAINER_ID%:/tmp/mongodb-minimizer.sh
 
+REM Step 2.1: Fix line endings and ensure script is executable
+echo Fixing script line endings and permissions...
+docker exec %CONTAINER_ID% bash -c "apt-get update && apt-get install -y dos2unix && dos2unix /tmp/mongodb-minimizer.sh && chmod +x /tmp/mongodb-minimizer.sh"
+
 REM Step 3: Run the installation and minimization process
 echo Installing and minimizing MongoDB...
 docker exec -e MONGODB_VERSION=%MONGODB_VERSION% ^
            -e MONGODB_USERNAME=%MONGODB_USERNAME% ^
            -e MONGODB_PASSWORD=%MONGODB_PASSWORD% ^
            -e OPERATION=all ^
-           %CONTAINER_ID% bash -c "chmod +x /tmp/mongodb-minimizer.sh && /tmp/mongodb-minimizer.sh"
+           %CONTAINER_ID% bash -c "/tmp/mongodb-minimizer.sh"
 
 REM Check for errors
 IF %ERRORLEVEL% NEQ 0 (
@@ -52,7 +56,7 @@ IF %ERRORLEVEL% NEQ 0 (
 REM Step 4: Extract Docker commit options
 echo Getting Docker commit options...
 SET TEMP_COMMIT_FILE=%TEMP%\mongodb_commit_options.txt
-docker exec -e OPERATION=commit-options %CONTAINER_ID% bash -c "chmod +x /tmp/mongodb-minimizer.sh && /tmp/mongodb-minimizer.sh" > %TEMP_COMMIT_FILE%
+docker exec -e OPERATION=commit-options %CONTAINER_ID% bash -c "/tmp/mongodb-minimizer.sh" > %TEMP_COMMIT_FILE%
 
 REM Step 5: Commit container with extracted options
 echo Creating minimal MongoDB image...

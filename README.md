@@ -14,6 +14,24 @@ This repository contains scripts to create the most minimal MongoDB Docker image
 - Supports custom MongoDB versions
 - Avoids using Dockerfile for a more streamlined build process
 
+## Benefits for Single Board Computers and Resource-Constrained Environments
+
+This ultra-minimalist MongoDB image is particularly beneficial for:
+
+- **Single Board Computers (SBCs)** like Raspberry Pi, ODROID, or similar devices with limited resources
+- **Edge computing** deployments where local database functionality is needed without overwhelming the device
+- **IoT applications** that require local data storage and processing
+- **Bandwidth-limited environments** where container image downloads must be as small as possible
+
+Specific advantages include:
+
+- **Minimized RAM usage**: With no unnecessary components, more memory is available for actual database operations
+- **Reduced storage requirements**: Uses a fraction of the storage space of standard MongoDB images
+- **Faster startup times**: Less data to load means quicker container initialization
+- **Lower thermal impact**: Reduced processing overhead can help minimize heat generation in passively cooled devices
+- **Improved battery life**: For portable or battery-powered deployments, the efficiency gains translate to longer operating times
+- **Practical for microservices**: Makes MongoDB viable in highly distributed architectures even on modest hardware
+
 ## The Minimization Approach
 
 Our scripts use a three-phase minimization approach:
@@ -152,6 +170,17 @@ The resulting image is typically around 40-60MB compared to:
 - Official MongoDB slim image: ~200MB
 
 This represents an 85-95% reduction in size while maintaining full MongoDB functionality.
+
+## Technical Excellence
+
+This image represents container optimization at its finest:
+
+- **True minimalism**: Contains only what's absolutely necessary - the MongoDB binary and required libraries
+- **Advanced dependency analysis**: Uses sophisticated techniques to ensure all required libraries are included without extras
+- **Binary optimization**: Employs `strip --strip-all` to reduce binary sizes to their minimum
+- **Security-minded design**: Runs as non-root with proper filesystem permissions
+- **Production-ready**: Includes health checks and volume configuration for real-world deployment
+- **Resource efficiency**: Optimized for environments where every byte and CPU cycle counts
 
 ## License
 

@@ -19,9 +19,9 @@ handle_error() {
 trap 'handle_error "${BASH_COMMAND}"' ERR
 
 # Accept parameters with defaults
-MONGODB_VERSION=${1:-"6.0"}
+MONGODB_VERSION=${1:-"8.0.6"}
 MONGODB_USERNAME=${2:-"admin"}
-MONGODB_PASSWORD=${3:-"mongoadmin"}
+MONGODB_PASSWORD=${3:-"admin"}
 
 echo "Building minimal MongoDB image with:"
 echo "- MongoDB version: $MONGODB_VERSION"
@@ -30,7 +30,7 @@ echo "- Admin password: $MONGODB_PASSWORD"
 
 # Step 1: Create a temporary container using a minimal Debian base
 echo "Creating temporary container..."
-CONTAINER_ID=$(docker run -d debian:slim-bullseye sleep infinity)
+CONTAINER_ID=$(docker run -d debian:sbookworm-slim sleep infinity)
 
 # Check container is running
 docker ps | grep -q $CONTAINER_ID || {
@@ -47,7 +47,7 @@ apt-get install -y wget gnupg binutils
 # Use modern GPG key handling
 wget -qO - https://www.mongodb.org/static/pgp/server-${MONGODB_VERSION}.asc | \
   gpg --dearmor > /etc/apt/trusted.gpg.d/mongodb-${MONGODB_VERSION}.gpg
-echo \"deb http://repo.mongodb.org/apt/debian bullseye/mongodb-org/${MONGODB_VERSION} main\" | tee /etc/apt/sources.list.d/mongodb-org-${MONGODB_VERSION}.list
+echo \"deb http://repo.mongodb.org/apt/debian bookworm/mongodb-org/${MONGODB_VERSION} main\" | tee /etc/apt/sources.list.d/mongodb-org-${MONGODB_VERSION}.list
 apt-get update
 apt-get install -y --no-install-recommends mongodb-org-server
 apt-get clean

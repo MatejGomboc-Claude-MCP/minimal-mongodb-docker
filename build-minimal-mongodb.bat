@@ -3,13 +3,13 @@ setlocal enabledelayedexpansion
 
 REM Accept parameters with defaults
 SET MONGODB_VERSION=%1
-IF "%MONGODB_VERSION%"=="" SET MONGODB_VERSION=6.0
+IF "%MONGODB_VERSION%"=="" SET MONGODB_VERSION=8.0.6
 
 SET MONGODB_USERNAME=%2
 IF "%MONGODB_USERNAME%"=="" SET MONGODB_USERNAME=admin
 
 SET MONGODB_PASSWORD=%3
-IF "%MONGODB_PASSWORD%"=="" SET MONGODB_PASSWORD=mongoadmin
+IF "%MONGODB_PASSWORD%"=="" SET MONGODB_PASSWORD=admin
 
 echo Building minimal MongoDB image with:
 echo - MongoDB version: %MONGODB_VERSION%
@@ -128,13 +128,13 @@ echo touch /var/lib/mongodb/.preconfigured
 ) > %TEMP_SCRIPT%
 
 REM Step 1: Create container
-FOR /F "tokens=*" %%i IN ('docker run -d debian:slim-bullseye sleep infinity') DO SET CONTAINER_ID=%%i
+FOR /F "tokens=*" %%i IN ('docker run -d debian:bookworm-slim sleep infinity') DO SET CONTAINER_ID=%%i
 
 echo Container created: %CONTAINER_ID%
 
 REM Step 2: Install MongoDB dependencies
 echo Installing MongoDB %MONGODB_VERSION% and dependencies...
-docker exec %CONTAINER_ID% bash -c "apt-get update && apt-get install -y wget gnupg binutils && wget -qO - https://www.mongodb.org/static/pgp/server-%MONGODB_VERSION%.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/mongodb-%MONGODB_VERSION%.gpg && echo \"deb http://repo.mongodb.org/apt/debian bullseye/mongodb-org/%MONGODB_VERSION% main\" | tee /etc/apt/sources.list.d/mongodb-org-%MONGODB_VERSION%.list && apt-get update && apt-get install -y --no-install-recommends mongodb-org-server && apt-get clean"
+docker exec %CONTAINER_ID% bash -c "apt-get update && apt-get install -y wget gnupg binutils && wget -qO - https://www.mongodb.org/static/pgp/server-%MONGODB_VERSION%.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/mongodb-%MONGODB_VERSION%.gpg && echo \"deb http://repo.mongodb.org/apt/debian bookworm/mongodb-org/%MONGODB_VERSION% main\" | tee /etc/apt/sources.list.d/mongodb-org-%MONGODB_VERSION%.list && apt-get update && apt-get install -y --no-install-recommends mongodb-org-server && apt-get clean"
 
 REM Step 3: Perform minimization
 echo Performing MongoDB minimization...

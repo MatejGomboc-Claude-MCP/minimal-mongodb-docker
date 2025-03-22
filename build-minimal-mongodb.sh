@@ -148,31 +148,25 @@ chmod 755 /usr/bin/mongod
 mkdir -p /var/lib/mongodb /var/log/mongodb
 chown -R 999:999 /var/lib/mongodb /var/log/mongodb
 
-# Start MongoDB temporarily without auth to create the admin user
-mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb
+# Create JavaScript initialization file with user creation logic
+cat > /var/lib/mongodb/init.js << EOF
+db = db.getSiblingDB(\"admin\");
+db.createUser({
+  user: \"${MONGODB_USERNAME}\",
+  pwd: \"${MONGODB_PASSWORD}\",
+  roles: [{role: \"root\", db: \"admin\"}]
+});
+EOF
 
-# Verify MongoDB started correctly
-echo 'Verifying MongoDB started correctly...'
-if ! pgrep -x mongod > /dev/null; then
-  echo 'MongoDB failed to start!'
-  cat /var/log/mongodb/init.log
-  exit 1
-fi
-
-# Create a default admin user with supplied credentials
-# Users should change this password after first login
-mongod --eval \"db = db.getSiblingDB(\\\"admin\\\"); db.createUser({user:\\\"${MONGODB_USERNAME}\\\", pwd:\\\"${MONGODB_PASSWORD}\\\", roles:[{role:\\\"root\\\", db:\\\"admin\\\"}]})\"
-
-# Stop the temporary MongoDB instance
-mongod --shutdown
-
-# Create a file indicating this is a pre-configured instance
-touch /var/lib/mongodb/.preconfigured
+# Create a flag file that will trigger initialization on first container start
+chown 999:999 /var/lib/mongodb/init.js
+touch /var/lib/mongodb/.initialized
+chown 999:999 /var/lib/mongodb/.initialized
 "
 
-# Step 4: Export the container as a new image with direct mongod command
+# Step 4: Export the container as a new image with direct mongod command and init logic
 docker commit --change='USER mongodb' \
-    --change='CMD ["mongod", "--config", "/etc/mongod.conf"]' \
+    --change='CMD ["sh", "-c", "if [ -f /var/lib/mongodb/.initialized ] && [ ! -f /var/lib/mongodb/.completed ]; then mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb; mongod --eval \"load(\\\"/var/lib/mongodb/init.js\\\")\"; mongod --shutdown; rm /var/lib/mongodb/init.js; touch /var/lib/mongodb/.completed; fi; exec mongod --config /etc/mongod.conf"]' \
     --change='EXPOSE 27017' \
     --change='VOLUME ["/var/lib/mongodb", "/var/log/mongodb"]' \
     --change='HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD [ "mongod", "--eval", "db.adminCommand(\'ping\')", "--quiet" ]' \

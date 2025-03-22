@@ -1,47 +1,38 @@
-# Ultra-Minimal MongoDB Docker Image
+# Extreme Minimal MongoDB Docker Image
 
-This repository contains scripts to create an extremely minimalist MongoDB Docker image using standard Debian paths. The approach focuses on creating the absolute smallest possible functional MongoDB image while maintaining compatibility with MongoDB client tools like Compass.
+This repository contains scripts to create the smallest possible MongoDB Docker image using standard Debian paths. The approach focuses on eliminating virtually everything except the essential MongoDB files required for operation.
 
 ## Features
 
-- Creates a ultra-minimal MongoDB container based on Debian slim
+- Creates the absolute minimum MongoDB container possible
 - Uses standard Debian file paths for MongoDB
 - Runs MongoDB as the mongodb user for proper security
 - Configures MongoDB for remote access (for use with MongoDB Compass)
-- Aggressively removes all unnecessary components to minimize image size
+- Achieves extreme minimization with a "delete everything" approach
 - Avoids using Dockerfile for a more streamlined build process
 
-## Ultra-Aggressive Minimization Steps
+## Extreme "Delete Everything" Approach
 
-The scripts use several advanced techniques to create a truly minimal image:
+The scripts use a two-phase approach to create a truly minimal image:
 
-1. **Intelligent Binary Preservation**:
-   - Identifies all MongoDB binaries (mongod, mongosh)
-   - Uses `ldd` to detect required shared libraries
-   - Preserves only these essential files
-   - Removes all other binaries from the system
+1. **Preservation Phase**:
+   - Identifies the MongoDB binaries (mongod, mongosh)
+   - Uses `ldd` to find all library dependencies
+   - Copies only these essential files to a temporary location
+   - Preserves required timezone data and configuration
+   - Saves MongoDB user information
+   
+2. **Deletion Phase**:
+   - **DELETES EVERYTHING** in the filesystem
+   - Removes all binaries, libraries, and system files
+   - Completely wipes out the container
+   
+3. **Restoration Phase**:
+   - Restores only the exact files MongoDB needs to function
+   - Reinstates only the required libraries and configuration
+   - Rebuilds a minimal system with only MongoDB essentials
 
-2. **Package Management Removal**:
-   - Completely removes apt and dpkg after MongoDB installation
-   - Removes all package management directories and files
-
-3. **Unnecessary Directory Removal**:
-   - Removes documentation, man pages, and locale data
-   - Removes all log files except MongoDB's log directory
-   - Keeps only UTC and Etc timezone data (required by MongoDB)
-   - Removes unnecessary system utilities and shell scripts
-
-4. **Service Cleanup**:
-   - Removes all init scripts and boot services
-   - Removes cron, logrotate, and other scheduled task mechanisms
-   - Removes PPP, SSH and other network service configurations
-
-5. **Binary Size Reduction**:
-   - Strips all binaries to remove debug symbols
-   - Removes all Python files (MongoDB is C++)
-   - Removes all non-C locales
-
-These techniques create an image that is typically 70-80% smaller than standard MongoDB images while maintaining full functionality.
+This radical approach results in a Docker image that is typically 80-90% smaller than standard MongoDB images while maintaining full functionality.
 
 ## Scripts
 

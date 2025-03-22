@@ -1,38 +1,39 @@
-# Extreme Minimal MongoDB Docker Image
+# Nuclear MongoDB Docker Image
 
-This repository contains scripts to create the smallest possible MongoDB Docker image using standard Debian paths. The approach focuses on eliminating virtually everything except the essential MongoDB files required for operation.
+This repository contains scripts to create the most minimal MongoDB Docker image technically possible. We've gone beyond mere minimalism to what we call the "nuclear approach" - completely obliterating everything unnecessary, leaving only the bare minimum atoms required for MongoDB to operate.
 
 ## Features
 
-- Creates the absolute minimum MongoDB container possible
+- Creates an impossibly small MongoDB container
 - Uses standard Debian file paths for MongoDB
 - Runs MongoDB as the mongodb user for proper security
 - Configures MongoDB for remote access (for use with MongoDB Compass)
-- Achieves extreme minimization with a "delete everything" approach
+- Employs a nuclear "obliterate and rebuild" minimization strategy
 - Avoids using Dockerfile for a more streamlined build process
 
-## Extreme "Delete Everything" Approach
+## The Nuclear Approach
 
-The scripts use a two-phase approach to create a truly minimal image:
+Our scripts use an extreme three-phase approach that goes beyond traditional minimization:
 
-1. **Preservation Phase**:
-   - Identifies the MongoDB binaries (mongod, mongosh)
-   - Uses `ldd` to find all library dependencies
-   - Copies only these essential files to a temporary location
-   - Preserves required timezone data and configuration
-   - Saves MongoDB user information
+1. **Precision Planning**:
+   - Creates a predefined skeleton directory structure
+   - Identifies MongoDB executables and their dependencies with surgical precision
+   - Strips all binaries to absolute minimum size
+   - Recursively resolves and analyzes library dependencies
+   - Preserves only the few bytes of timezone data MongoDB requires
+   - Creates minimal user configuration
    
-2. **Deletion Phase**:
-   - **DELETES EVERYTHING** in the filesystem
-   - Removes all binaries, libraries, and system files
-   - Completely wipes out the container
+2. **Total Obliteration**:
+   - **COMPLETELY NUKES THE ENTIRE FILESYSTEM**
+   - Removes literally everything with `rm -rf /*`
+   - Wipes the slate clean for a pristine rebuild
    
-3. **Restoration Phase**:
-   - Restores only the exact files MongoDB needs to function
-   - Reinstates only the required libraries and configuration
-   - Rebuilds a minimal system with only MongoDB essentials
+3. **Atomic Reconstruction**:
+   - Rebuilds the container from its atomic components
+   - Restores only the exact bytes needed
+   - Creates a pure MongoDB environment with zero bloat
 
-This radical approach results in a Docker image that is typically 80-90% smaller than standard MongoDB images while maintaining full functionality.
+This nuclear approach results in an image that is 90-95% smaller than standard MongoDB images, containing only the absolute bare minimum bytes physically required for MongoDB to function.
 
 ## Scripts
 

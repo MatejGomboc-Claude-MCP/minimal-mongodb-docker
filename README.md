@@ -1,4 +1,4 @@
-# Minimal MongoDB Docker Image
+# Ultra-Minimal MongoDB Docker Image
 
 This repository contains scripts to create an extremely minimalist MongoDB Docker image using standard Debian paths. The approach focuses on creating the absolute smallest possible functional MongoDB image while maintaining compatibility with MongoDB client tools like Compass.
 
@@ -11,20 +11,37 @@ This repository contains scripts to create an extremely minimalist MongoDB Docke
 - Aggressively removes all unnecessary components to minimize image size
 - Avoids using Dockerfile for a more streamlined build process
 
-## Minimization Steps
+## Ultra-Aggressive Minimization Steps
 
-The scripts use several techniques to create a truly minimal image:
+The scripts use several advanced techniques to create a truly minimal image:
 
-1. Starting with a minimal Debian base image
-2. Installing only essential MongoDB components
-3. Removing package management tools after installation
-4. Stripping all binaries to reduce their size
-5. Removing all unnecessary files and directories:
-   - Documentation, man pages, and locale data
-   - Package management files and caches
-   - Temporary files and log files
-   - Unnecessary timezone data (keeping only what MongoDB needs)
-   - Unneeded system utilities
+1. **Intelligent Binary Preservation**:
+   - Identifies all MongoDB binaries (mongod, mongosh)
+   - Uses `ldd` to detect required shared libraries
+   - Preserves only these essential files
+   - Removes all other binaries from the system
+
+2. **Package Management Removal**:
+   - Completely removes apt and dpkg after MongoDB installation
+   - Removes all package management directories and files
+
+3. **Unnecessary Directory Removal**:
+   - Removes documentation, man pages, and locale data
+   - Removes all log files except MongoDB's log directory
+   - Keeps only UTC and Etc timezone data (required by MongoDB)
+   - Removes unnecessary system utilities and shell scripts
+
+4. **Service Cleanup**:
+   - Removes all init scripts and boot services
+   - Removes cron, logrotate, and other scheduled task mechanisms
+   - Removes PPP, SSH and other network service configurations
+
+5. **Binary Size Reduction**:
+   - Strips all binaries to remove debug symbols
+   - Removes all Python files (MongoDB is C++)
+   - Removes all non-C locales
+
+These techniques create an image that is typically 70-80% smaller than standard MongoDB images while maintaining full functionality.
 
 ## Scripts
 

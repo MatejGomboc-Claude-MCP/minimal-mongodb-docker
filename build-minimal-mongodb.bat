@@ -17,8 +17,16 @@ echo - Admin username: %MONGODB_USERNAME%
 echo - Admin password: %MONGODB_PASSWORD%
 
 REM Step 1: Create container
+echo Creating temporary container...
 FOR /F "tokens=*" %%i IN ('docker run -d debian:bookworm-slim sleep infinity') DO SET CONTAINER_ID=%%i
 echo Container created: %CONTAINER_ID%
+
+REM Check if container is running
+docker ps | findstr /C:"%CONTAINER_ID%" > NUL
+IF %ERRORLEVEL% NEQ 0 (
+  echo Container failed to start properly!
+  exit /b 1
+)
 
 REM Step 2: Copy the minimizer script to the container
 echo Copying mongodb-minimizer.sh to container...
@@ -51,7 +59,9 @@ SET COMMIT_CMD=docker commit
 FOR /F "tokens=*" %%a IN ('findstr /v "===" %TEMP_COMMIT_FILE% ^| findstr /v "^$"') DO (
   SET COMMIT_CMD=!COMMIT_CMD! %%a
 )
-%COMMIT_CMD% %CONTAINER_ID% minimal-mongodb:latest
+SET COMMIT_CMD=!COMMIT_CMD! %CONTAINER_ID% minimal-mongodb:latest
+%COMMIT_CMD%
+
 IF %ERRORLEVEL% NEQ 0 (
   echo Docker commit failed!
   docker stop %CONTAINER_ID%
@@ -65,6 +75,7 @@ del %TEMP_COMMIT_FILE%
 docker stop %CONTAINER_ID%
 docker rm %CONTAINER_ID%
 
+echo.
 echo Minimal MongoDB image created as 'minimal-mongodb:latest'
 echo Image details:
 docker images minimal-mongodb:latest

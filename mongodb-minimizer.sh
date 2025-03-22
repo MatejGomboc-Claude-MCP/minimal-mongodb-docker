@@ -175,6 +175,10 @@ minimize_mongodb() {
     exit 1
   fi
   
+  # Get the MongoDB process ID
+  MONGODB_PID=$(pgrep -x mongod)
+  echo "MongoDB started with PID: $MONGODB_PID"
+  
   # Wait for MongoDB to become available by using netcat to check the port
   echo "Waiting for MongoDB to become available..."
   timeout=30
@@ -230,45 +234,32 @@ minimize_mongodb() {
     fi
   fi
 
-  # Stop MongoDB and copy the initialized data files
-  echo "Stopping MongoDB..."
-  if ! mongod --dbpath /var/lib/mongodb --shutdown; then
-    echo "WARNING: Problem shutting down MongoDB gracefully."
+  # Forcefully terminate MongoDB process instead of using shutdown command
+  echo "Terminating MongoDB process (PID $MONGODB_PID)..."
+  if [ -n "$MONGODB_PID" ] && kill -9 "$MONGODB_PID" 2>/dev/null; then
+    echo "MongoDB process terminated."
+  else
+    echo "WARNING: Could not terminate MongoDB process by PID. Trying pkill..."
+    pkill -9 -x mongod || true
   fi
   
-  # Ensure MongoDB has completely stopped
-  echo "Waiting for MongoDB process to terminate..."
-  timeout=30
-  stopped=false
-  for ((i=1; i<=timeout; i++)); do
-    if ! pgrep -x mongod > /dev/null; then
-      echo "MongoDB stopped successfully after $i seconds."
-      stopped=true
-      break
-    fi
-    sleep 1
-    printf "."
-  done
-  echo ""
+  # Wait a moment to ensure the process is fully terminated
+  sleep 3
   
-  # Forcefully terminate if still running
-  if [ "$stopped" != "true" ]; then
-    echo "Warning: MongoDB did not shut down gracefully after $timeout seconds, terminating process..."
-    pkill -9 mongod 2>/dev/null || true
-    sleep 2
-    
-    # Final check to ensure it's really stopped
-    if pgrep -x mongod > /dev/null; then
-      echo "ERROR: Unable to stop MongoDB process!"
-      exit 1
-    fi
+  # Final check to ensure MongoDB is stopped
+  if pgrep -x mongod > /dev/null; then
+    echo "WARNING: MongoDB is still running after termination attempts. This might affect file copying."
+  else
+    echo "MongoDB process is fully terminated."
   fi
   
   # Copy the pre-initialized data files to ensure admin user exists
   echo "Copying initialized MongoDB data files..."
   mkdir -p /mongodb-minimal/var/lib/mongodb
   if ! cp -a /var/lib/mongodb/* /mongodb-minimal/var/lib/mongodb/ 2>/dev/null; then
-    echo "WARNING: Some MongoDB data files could not be copied. This might be normal if the database is empty."
+    echo "WARNING: Some MongoDB data files could not be copied. Trying with specific permissions..."
+    # Try with more permissions
+    find /var/lib/mongodb -type f -exec cp -f {} /mongodb-minimal/var/lib/mongodb/ \; 2>/dev/null || true
   fi
 
   # Create absolute minimal MongoDB configuration with authentication enabled

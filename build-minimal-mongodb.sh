@@ -82,6 +82,19 @@ rm -rf /mongodb-minimal
 chmod 755 /usr/bin/mongod
 mkdir -p /var/lib/mongodb /var/log/mongodb
 chown -R 999:999 /var/lib/mongodb /var/log/mongodb
+
+# Start MongoDB temporarily without auth to create the admin user
+mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb
+
+# Create a default admin user with password "mongoadmin"
+# Users should change this password after first login
+mongod --eval "db = db.getSiblingDB(\"admin\"); db.createUser({user:\"admin\", pwd:\"mongoadmin\", roles:[{role:\"root\", db:\"admin\"}]})"
+
+# Stop the temporary MongoDB instance
+mongod --shutdown
+
+# Create a file indicating this is a pre-configured instance
+touch /var/lib/mongodb/.preconfigured
 '
 
 # Step 4: Export the container as a new image with direct mongod command
@@ -98,3 +111,9 @@ docker rm $CONTAINER_ID
 echo "Minimal MongoDB image created as 'minimal-mongodb:latest'"
 echo "Image details:"
 docker images minimal-mongodb:latest
+echo ""
+echo "Default admin credentials:"
+echo "Username: admin"
+echo "Password: mongoadmin"
+echo ""
+echo "IMPORTANT: Change the default password after first login!"

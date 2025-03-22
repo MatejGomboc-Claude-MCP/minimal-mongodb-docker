@@ -11,7 +11,41 @@ REM Step 3: Remove unnecessary files
 docker exec %CONTAINER_ID% bash -c "rm -rf /usr/share/doc /usr/share/man /tmp/* /var/tmp/* /var/cache/apt/*"
 
 REM Step 4: Use default Debian MongoDB configuration and set permissions
-docker exec %CONTAINER_ID% bash -c "mkdir -p /var/log/mongodb && mkdir -p /var/lib/mongodb && chown -R mongodb:mongodb /var/lib/mongodb /var/log/mongodb && echo 'storage:\n  dbPath: /var/lib/mongodb\n  journal:\n    enabled: true\nsystemLog:\n  destination: file\n  logAppend: true\n  path: /var/log/mongodb/mongod.log\nnet:\n  port: 27017\n  bindIp: 0.0.0.0\nprocessManagement:\n  timeZoneInfo: /usr/share/zoneinfo\n  fork: false\nsecurity:\n  authorization: enabled' > /etc/mongod.conf && chmod 755 /usr/bin/mongod"
+docker exec %CONTAINER_ID% bash -c "mkdir -p /var/log/mongodb && mkdir -p /var/lib/mongodb && chown -R mongodb:mongodb /var/lib/mongodb /var/log/mongodb"
+
+REM Create identical configuration file using here-doc approach
+docker exec %CONTAINER_ID% bash -c "cat > /etc/mongod.conf << 'EOF'
+# mongod.conf
+
+# Where and how to store data.
+storage:
+  dbPath: /var/lib/mongodb
+  journal:
+    enabled: true
+
+# Where to write logging data.
+systemLog:
+  destination: file
+  logAppend: true
+  path: /var/log/mongodb/mongod.log
+
+# Network interfaces
+net:
+  port: 27017
+  bindIp: 0.0.0.0
+
+# Process management options
+processManagement:
+  timeZoneInfo: /usr/share/zoneinfo
+  fork: false
+
+# Security settings
+security:
+  authorization: enabled
+EOF"
+
+REM Set permissions for mongod binary
+docker exec %CONTAINER_ID% bash -c "chmod 755 /usr/bin/mongod"
 
 REM Step 5: Export as new image with direct mongod command
 docker commit --change="USER mongodb" ^

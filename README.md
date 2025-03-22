@@ -1,41 +1,40 @@
-# NO MERCY: Ultra-Minimalist MongoDB Docker Image
+# Ultra-Minimalist MongoDB Docker Image
 
-This repository contains scripts to create the most minimal MongoDB Docker image humanly possible, with absolutely NO MERCY shown to any unnecessary components. We've pushed minimization to its theoretical limit, creating an image with only the exact bytes MongoDB needs to exist.
+This repository contains scripts to create the most minimal MongoDB Docker image possible, with no unnecessary components. The approach focuses on creating an image with only the exact files MongoDB needs to function.
 
 ## Features
 
-- Creates an impossibly small MongoDB container
+- Creates an extremely small MongoDB container
 - Uses standard Debian file paths for MongoDB
 - Runs MongoDB as the mongodb user for proper security
 - Configures MongoDB for remote access (for use with MongoDB Compass)
-- Uses a "ZERO MERCY" approach - nothing but MongoDB survives
+- Uses an aggressive minimization approach - only MongoDB-related files remain
 - Avoids using Dockerfile for a more streamlined build process
 
-## The NO MERCY Approach
+## The Minimization Approach
 
-Our scripts use a scorched-earth approach with absolutely zero compromise:
+Our scripts use a three-phase minimization approach:
 
-1. **Surgical Extraction**:
+1. **Precision Selection**:
    - Only the MongoDB binaries (mongod, mongosh) are preserved
-   - Every binary is fully stripped with `--strip-all` (maximum stripping)
-   - Only the exact required shared libraries are kept
-   - Recursive dependency analysis ensures no missing links
-   - Only the exact bytes of timezone data MongoDB requires
-   - No debugging tools, no shell, NO MERCY!
+   - Every binary is fully stripped with `--strip-all` to reduce size
+   - Only the required shared libraries are identified and kept
+   - Recursive dependency analysis ensures all needed libraries are included
+   - Only the essential timezone data MongoDB requires is preserved
+   - No debugging tools or shell utilities are included
    
-2. **Total Annihilation**:
-   - Completely nukes the entire filesystem with `rm -rf /*`
-   - Obliterates every single file and directory
-   - Zero tolerance for unnecessary components
+2. **Filesystem Cleanup**:
+   - Removes the entire filesystem with `rm -rf /*`
+   - Eliminates all unnecessary files and directories
    
 3. **Minimal Reconstruction**:
-   - Rebuilds with only the exact files needed
+   - Rebuilds with only the exact files needed for MongoDB
    - Creates a minimal root filesystem with only required paths
-   - Uses hardcoded UID/GID for simplicity (999)
-   - Creates minimal configuration files by hand
-   - Not a single byte of bloat remains
+   - Uses standard MongoDB UID/GID (999) for proper permissions
+   - Creates minimal configuration files
+   - Results in a highly optimized image
 
-This "NO MERCY" approach creates a MongoDB image that is 95-98% smaller than standard MongoDB images, containing absolutely nothing but the bare minimum required for MongoDB to function.
+This approach creates a MongoDB image that is significantly smaller than standard MongoDB images (potentially 80-90% smaller), containing only what's required for MongoDB to function.
 
 ## Scripts
 
@@ -45,6 +44,12 @@ Two scripts are provided:
 2. `build-minimal-mongodb.bat` - For Windows users
 
 Both scripts produce identical Docker images.
+
+## Requirements
+
+- Docker installed and running
+- Internet connection (to download MongoDB packages during build)
+- Administrative/sudo access (to run Docker commands)
 
 ## Usage
 
@@ -75,7 +80,7 @@ docker run -d -p 27017:27017 --name mongodb minimal-mongodb:latest
 
 ### Initial Setup
 
-On first run, you may need to set up a MongoDB user for authentication:
+On first run, you need to set up a MongoDB user for authentication:
 
 ```bash
 # Run MongoDB temporarily without authentication
@@ -121,7 +126,7 @@ The container uses standard Debian MongoDB paths:
 
 ## Persistent Storage
 
-To persist MongoDB data, mount volumes:
+To persist MongoDB data between container restarts, mount volumes:
 
 ```bash
 docker run -d -p 27017:27017 \
@@ -129,6 +134,13 @@ docker run -d -p 27017:27017 \
   -v mongodb-logs:/var/log/mongodb \
   --name mongodb minimal-mongodb:latest
 ```
+
+## Troubleshooting
+
+Since this container is extremely minimal:
+- There are no debugging tools inside the container
+- Use `docker logs mongodb` to view MongoDB logs
+- Use MongoDB Compass or the MongoDB shell to interact with the database
 
 ## License
 

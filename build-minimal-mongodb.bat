@@ -5,30 +5,24 @@ REM Step 1: Create a temporary container using a minimal Debian base
 FOR /F "tokens=*" %%i IN ('docker run -d debian:slim-bullseye sleep infinity') DO SET CONTAINER_ID=%%i
 
 REM Step 2: Install MongoDB and dependencies
-docker exec %CONTAINER_ID% bash -c "apt-get update && apt-get install -y wget gnupg binutils && wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add - && echo \"deb http://repo.mongodb.org/apt/debian bullseye/mongodb-org/6.0 main\" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list && apt-get update && apt-get install -y --no-install-recommends mongodb-org-server mongodb-org-shell && apt-get clean"
+docker exec %CONTAINER_ID% bash -c "apt-get update && apt-get install -y wget gnupg binutils && wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add - && echo \"deb http://repo.mongodb.org/apt/debian bullseye/mongodb-org/6.0 main\" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list && apt-get update && apt-get install -y --no-install-recommends mongodb-org-server && apt-get clean"
 
 REM Step 3: ULTRA-EXTREME minimization - nuclear approach with ZERO MERCY
 docker exec %CONTAINER_ID% bash -c "
 # Create base minimal structure
 mkdir -p /mongodb-minimal/{etc,var/lib/mongodb,var/log/mongodb,usr/share/zoneinfo/UTC,usr/share/zoneinfo/Etc,tmp,usr/bin}
 
-# Copy MongoDB binaries and strip them to minimum size
+# Copy only MongoDB server binary (no shell) and strip it to minimum size
 cp /usr/bin/mongod /mongodb-minimal/usr/bin/
 strip --strip-all /mongodb-minimal/usr/bin/mongod
-cp /usr/bin/mongosh /mongodb-minimal/usr/bin/
-strip --strip-all /mongodb-minimal/usr/bin/mongosh
-
-# NO EMERGENCY SHELL - We have no mercy!
 
 # Find and copy ONLY required libraries with absolute paths
-for bin in /mongodb-minimal/usr/bin/mongod /mongodb-minimal/usr/bin/mongosh; do
-  for lib in \$(ldd /usr/bin/\$(basename \$bin) | grep -o \"/[^ ]*\" | sort -u); do
-    if [ -f \"\$lib\" ]; then
-      mkdir -p \"/mongodb-minimal\$(dirname \"\$lib\")\"
-      cp \"\$lib\" \"/mongodb-minimal\$lib\"
-      strip --strip-all \"/mongodb-minimal\$lib\"
-    fi
-  done
+for lib in \$(ldd /usr/bin/mongod | grep -o \"/[^ ]*\" | sort -u); do
+  if [ -f \"\$lib\" ]; then
+    mkdir -p \"/mongodb-minimal\$(dirname \"\$lib\")\"
+    cp \"\$lib\" \"/mongodb-minimal\$lib\"
+    strip --strip-all \"/mongodb-minimal\$lib\"
+  fi
 done
 
 # Find and copy libraries required by libraries (recursive dependencies)
@@ -80,7 +74,7 @@ mv /mongodb-minimal/* /
 rm -rf /mongodb-minimal
 
 # Set proper permissions
-chmod 755 /usr/bin/mongod /usr/bin/mongosh
+chmod 755 /usr/bin/mongod
 mkdir -p /var/lib/mongodb /var/log/mongodb
 chown -R 999:999 /var/lib/mongodb /var/log/mongodb
 "

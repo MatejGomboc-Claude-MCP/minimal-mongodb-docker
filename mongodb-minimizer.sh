@@ -156,20 +156,52 @@ minimize_mongodb() {
     fi
   fi
 
-  # Start MongoDB temporarily to create admin user - with bind_ip_all
+  # Create keyfile for authentication
+  echo "Creating MongoDB keyfile..."
+  mkdir -p /mongodb-minimal/etc/mongodb
+  openssl rand -base64 756 > /mongodb-minimal/etc/mongodb/keyfile
+  chmod 400 /mongodb-minimal/etc/mongodb/keyfile
+
+  # Create a MongoDB config file for initialization without auth
+  echo "Creating temporary MongoDB configuration file..."
+  mkdir -p /var/lib/mongodb /var/log/mongodb
+  cat > /tmp/mongod-init.conf << EOF
+storage:
+  dbPath: /var/lib/mongodb
+  journal:
+    enabled: true
+systemLog:
+  destination: file
+  path: /var/log/mongodb/init.log
+  logAppend: true
+net:
+  port: 27017
+  bindIp: 0.0.0.0
+processManagement:
+  timeZoneInfo: /usr/share/zoneinfo
+  fork: false
+EOF
+
+  # Start MongoDB temporarily to create admin user
   echo "Starting MongoDB to create admin user..."
-  if ! mongod --fork --bind_ip_all --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb; then
-    echo "ERROR: Failed to start MongoDB!"
+  mongod --fork --config /tmp/mongod-init.conf
+
+  # Wait for MongoDB to start properly - check process
+  echo "Waiting for MongoDB process to start..."
+  sleep 5
+  if ! pgrep -x mongod > /dev/null; then
+    echo "ERROR: MongoDB process failed to start!"
     cat /var/log/mongodb/init.log
     exit 1
   fi
-
-  # Wait for MongoDB to start properly
-  echo "Waiting for MongoDB to start..."
+  
+  # Wait for MongoDB to become available by using the MongoDB networking check
+  echo "Waiting for MongoDB to become available..."
   timeout=30
   started=false
   for ((i=1; i<=timeout; i++)); do
-    if mongod --eval "db.adminCommand('ping')" >/dev/null 2>&1; then
+    # This explicitly uses localhost to ensure we're connecting to the local MongoDB instance
+    if mongod --host 127.0.0.1 --eval "db.adminCommand('ping')" >/dev/null 2>&1; then
       echo "MongoDB started successfully after $i seconds."
       started=true
       break
@@ -180,8 +212,20 @@ minimize_mongodb() {
   echo ""
   
   if [ "$started" != "true" ]; then
-    echo "ERROR: MongoDB failed to start after $timeout seconds!"
+    echo "ERROR: MongoDB failed connection test after $timeout seconds!"
     cat /var/log/mongodb/init.log
+    
+    # Check if the MongoDB process is still running
+    if pgrep -x mongod > /dev/null; then
+      echo "Note: MongoDB process is still running, but connection test failed."
+      
+      # Try to get MongoDB server status directly from log file
+      echo "Server log extract:"
+      tail -n 20 /var/log/mongodb/init.log
+    else
+      echo "ERROR: MongoDB process is no longer running!"
+    fi
+    
     exit 1
   fi
 
@@ -191,17 +235,11 @@ minimize_mongodb() {
   ESCAPED_USERNAME=$(printf '%s' "${MONGODB_USERNAME}" | sed 's/"/\\"/g')
   ESCAPED_PASSWORD=$(printf '%s' "${MONGODB_PASSWORD}" | sed 's/"/\\"/g')
   
-  if ! mongod --eval "db = db.getSiblingDB(\"admin\"); db.createUser({user:\"${ESCAPED_USERNAME}\", pwd:\"${ESCAPED_PASSWORD}\", roles:[{role:\"root\", db:\"admin\"}]})"; then
+  if ! mongod --host 127.0.0.1 --eval "db = db.getSiblingDB(\"admin\"); db.createUser({user:\"${ESCAPED_USERNAME}\", pwd:\"${ESCAPED_PASSWORD}\", roles:[{role:\"root\", db:\"admin\"}]})"; then
     echo "ERROR: Failed to create admin user!"
     cat /var/log/mongodb/init.log
     exit 1
   fi
-
-  # Create keyfile for authentication
-  echo "Creating MongoDB keyfile..."
-  mkdir -p /mongodb-minimal/etc/mongodb
-  openssl rand -base64 756 > /mongodb-minimal/etc/mongodb/keyfile
-  chmod 400 /mongodb-minimal/etc/mongodb/keyfile
 
   # Stop MongoDB and copy the initialized data files
   echo "Stopping MongoDB..."

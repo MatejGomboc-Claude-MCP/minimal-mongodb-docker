@@ -7,10 +7,10 @@ FOR /F "tokens=*" %%i IN ('docker run -d debian:slim-bullseye sleep infinity') D
 REM Step 2: Install MongoDB and dependencies
 docker exec %CONTAINER_ID% bash -c "apt-get update && apt-get install -y wget gnupg binutils && wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add - && echo \"deb http://repo.mongodb.org/apt/debian bullseye/mongodb-org/6.0 main\" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list && apt-get update && apt-get install -y --no-install-recommends mongodb-org-server mongodb-org-shell && apt-get clean"
 
-REM Step 3: ULTRA-EXTREME minimization - nuclear approach
+REM Step 3: ULTRA-EXTREME minimization - nuclear approach with ZERO MERCY
 docker exec %CONTAINER_ID% bash -c "
 # Create base minimal structure
-mkdir -p /mongodb-minimal/{bin,lib,etc,var/lib/mongodb,var/log/mongodb,usr/share/zoneinfo/UTC,usr/share/zoneinfo/Etc,tmp,usr/bin}
+mkdir -p /mongodb-minimal/{etc,var/lib/mongodb,var/log/mongodb,usr/share/zoneinfo/UTC,usr/share/zoneinfo/Etc,tmp,usr/bin}
 
 # Copy MongoDB binaries and strip them to minimum size
 cp /usr/bin/mongod /mongodb-minimal/usr/bin/
@@ -18,8 +18,7 @@ strip --strip-all /mongodb-minimal/usr/bin/mongod
 cp /usr/bin/mongosh /mongodb-minimal/usr/bin/
 strip --strip-all /mongodb-minimal/usr/bin/mongosh
 
-# Essential: Add a minimal shell for emergency access
-cp /bin/busybox /mongodb-minimal/bin/ 2>/dev/null || cp /bin/dash /mongodb-minimal/bin/ 2>/dev/null || cp /bin/sh /mongodb-minimal/bin/
+# NO EMERGENCY SHELL - We have no mercy!
 
 # Find and copy ONLY required libraries with absolute paths
 for bin in /mongodb-minimal/usr/bin/mongod /mongodb-minimal/usr/bin/mongosh; do
@@ -27,7 +26,7 @@ for bin in /mongodb-minimal/usr/bin/mongod /mongodb-minimal/usr/bin/mongosh; do
     if [ -f \"\$lib\" ]; then
       mkdir -p \"/mongodb-minimal\$(dirname \"\$lib\")\"
       cp \"\$lib\" \"/mongodb-minimal\$lib\"
-      strip --strip-unneeded \"/mongodb-minimal\$lib\"
+      strip --strip-all \"/mongodb-minimal\$lib\"
     fi
   done
 done
@@ -38,7 +37,7 @@ for lib in \$(find /mongodb-minimal -name \"*.so*\"); do
     if [ -f \"\$dep\" ] && [ ! -f \"/mongodb-minimal\$dep\" ]; then
       mkdir -p \"/mongodb-minimal\$(dirname \"\$dep\")\"
       cp \"\$dep\" \"/mongodb-minimal\$dep\"
-      strip --strip-unneeded \"/mongodb-minimal\$dep\"
+      strip --strip-all \"/mongodb-minimal\$dep\"
     fi
   done
 done
@@ -47,9 +46,8 @@ done
 cp -r /usr/share/zoneinfo/UTC /mongodb-minimal/usr/share/zoneinfo/
 cp -r /usr/share/zoneinfo/Etc /mongodb-minimal/usr/share/zoneinfo/
 
-# Create minimal MongoDB configuration
+# Create absolute minimal MongoDB configuration
 cat > /mongodb-minimal/etc/mongod.conf << EOF
-# mongod.conf - absolute minimal configuration
 storage:
   dbPath: /var/lib/mongodb
   journal:
@@ -69,15 +67,12 @@ security:
 EOF
 
 # Create passwd entry for MongoDB user (uid 999 is common for mongodb)
-echo \"mongodb:x:999:999:mongodb user:/var/lib/mongodb:/bin/false\" > /mongodb-minimal/etc/passwd
+echo \"mongodb:x:999:999::/var/lib/mongodb:/\" > /mongodb-minimal/etc/passwd
 echo \"mongodb:x:999:\" > /mongodb-minimal/etc/group
 
 # Create an empty /etc/nsswitch.conf to avoid getpwnam issues
 echo \"passwd: files\" > /mongodb-minimal/etc/nsswitch.conf
 echo \"group: files\" >> /mongodb-minimal/etc/nsswitch.conf
-
-# Create a bare minimum root directory
-mkdir -p /mongodb-minimal/root
 
 # NUKE EVERYTHING, then restore only our minimal copy
 rm -rf /* 2>/dev/null || true

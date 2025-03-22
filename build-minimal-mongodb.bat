@@ -21,10 +21,11 @@ echo Creating temporary container...
 FOR /F "tokens=*" %%i IN ('docker run -d debian:bookworm-slim sleep infinity') DO SET CONTAINER_ID=%%i
 echo Container created: %CONTAINER_ID%
 
-REM Check if container is running
-docker ps | findstr /C:"%CONTAINER_ID%" > NUL
+REM Check if container is running - use a more reliable method
+docker inspect --format="{{.State.Running}}" %CONTAINER_ID% | findstr "true" > NUL
 IF %ERRORLEVEL% NEQ 0 (
   echo Container failed to start properly!
+  docker rm -f %CONTAINER_ID% > NUL 2>&1
   exit /b 1
 )
 

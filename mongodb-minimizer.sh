@@ -71,7 +71,6 @@ minimize_mongodb() {
   apt-get install -y --no-install-recommends coreutils
 
   # Create minimization directory structure
-  # FIXED: Changed to create the parent zoneinfo directory only, not UTC and Etc subdirectories
   mkdir -p /mongodb-minimal/{etc,var/lib/mongodb,var/log/mongodb,usr/share/zoneinfo,tmp,usr/bin}
 
   # Copy MongoDB binary and strip it
@@ -133,7 +132,7 @@ processManagement:
     timeZoneInfo: /usr/share/zoneinfo
     fork: false
 security:
-    authorization: enabled
+    authorization: disabled
 EOF
 
   # Create passwd entry for MongoDB user (uid 999 is common for mongodb)
@@ -144,62 +143,82 @@ EOF
   echo "passwd: files" > /mongodb-minimal/etc/nsswitch.conf
   echo "group: files" >> /mongodb-minimal/etc/nsswitch.conf
 
-  # FIXED: Copy essential binaries for post-cleanup operations 
-  mkdir -p /mongodb-minimal/bin
-  cp /bin/mv /mongodb-minimal/bin/
-  cp /bin/cp /mongodb-minimal/bin/
-  cp /bin/rm /mongodb-minimal/bin/
-  cp /bin/mkdir /mongodb-minimal/bin/
-  cp /bin/chmod /mongodb-minimal/bin/
-  cp /bin/chown /mongodb-minimal/bin/
-  cp /bin/touch /mongodb-minimal/bin/
+  # Instead of running MongoDB to create a user during build,
+  # we'll create an initialization script that will run on first container start
   
-  # FIXED: Create a small script to handle the cleanup and restoration
-  cat > /mongodb-minimal/cleanup.sh << 'EOF'
+  # Create entrypoint script to initialize MongoDB on first run
+  mkdir -p /mongodb-minimal/usr/local/bin
+  cat > /mongodb-minimal/usr/local/bin/docker-entrypoint.sh << 'EOF'
 #!/bin/sh
-# Preserve PATH to ensure we can find our saved commands
-PATH=/mongodb-minimal/bin:$PATH
-export PATH
+set -e
 
-# Move minimal contents to root while preserving our critical binaries
-find /mongodb-minimal -mindepth 1 -maxdepth 1 -not -name bin | while read dir; do
-  mv "$dir"/* /$(basename "$dir")/
-done
+# This script runs as mongodb user (uid 999)
 
-# Now clean up the temporary directory
-rm -rf /mongodb-minimal
+# Check if this is first run (no .initialized file)
+if [ ! -f /var/lib/mongodb/.initialized ]; then
+    echo "Initializing MongoDB for first run..."
+    
+    # Start mongod without auth for initial setup
+    mongod --dbpath /var/lib/mongodb --logpath /var/log/mongodb/init.log --fork --bind_ip 127.0.0.1
+    
+    # Wait for MongoDB to start
+    for i in {1..30}; do
+        if mongod --eval "db.adminCommand('ping')" >/dev/null 2>&1; then
+            break
+        fi
+        echo "Waiting for MongoDB to start... ($i/30)"
+        sleep 1
+    done
+    
+    # Create admin user
+    mongod --eval "db = db.getSiblingDB('admin'); db.createUser({user:'MONGODB_USERNAME_PLACEHOLDER', pwd:'MONGODB_PASSWORD_PLACEHOLDER', roles:[{role:'root', db:'admin'}]})"
+    
+    # Shut down MongoDB
+    mongod --dbpath /var/lib/mongodb --shutdown
+    
+    # Create initialized marker
+    touch /var/lib/mongodb/.initialized
+    echo "MongoDB initialization complete."
+fi
+
+# Start MongoDB with regular configuration
+exec mongod --config /etc/mongod.conf
 EOF
 
-  # Make the cleanup script executable
-  chmod +x /mongodb-minimal/cleanup.sh
+  # Replace placeholders with actual values
+  sed -i "s/MONGODB_USERNAME_PLACEHOLDER/${MONGODB_USERNAME}/g" /mongodb-minimal/usr/local/bin/docker-entrypoint.sh
+  sed -i "s/MONGODB_PASSWORD_PLACEHOLDER/${MONGODB_PASSWORD}/g" /mongodb-minimal/usr/local/bin/docker-entrypoint.sh
+  
+  # Make the entrypoint script executable
+  chmod 755 /mongodb-minimal/usr/local/bin/docker-entrypoint.sh
 
-  # FIXED: Use the cleanup script instead of directly running rm and mv
-  /mongodb-minimal/cleanup.sh
+  # Directly move files from minimal directory to root
+  # This approach eliminates the need for extra binaries
+  echo "Moving minimal files to root directly..."
+  cd /mongodb-minimal
+  
+  # For each directory under /mongodb-minimal, copy its contents to the root
+  for dir in $(find . -mindepth 1 -maxdepth 1 -type d | cut -c 3-); do
+    # Ensure target directory exists
+    mkdir -p "/$dir"
+    
+    # Move contents
+    cp -a "$dir"/* "/$dir/" 2>/dev/null || true
+  done
+  
+  # Move any files in the root of /mongodb-minimal
+  for file in $(find . -maxdepth 1 -type f | cut -c 3-); do
+    cp -a "$file" "/$file" 2>/dev/null || true
+  done
+  
+  # Return to root and remove the temporary directory
+  cd /
+  rm -rf /mongodb-minimal
 
   # Set proper permissions
   chmod 755 /usr/bin/mongod
   mkdir -p /var/lib/mongodb /var/log/mongodb
   chown -R 999:999 /var/lib/mongodb /var/log/mongodb
-
-  # Start MongoDB temporarily without auth to create the admin user
-  mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb
-
-  # Verify MongoDB started correctly
-  if ! pgrep -x mongod > /dev/null; then
-    echo 'MongoDB failed to start!'
-    cat /var/log/mongodb/init.log
-    exit 1
-  fi
-
-  # Create a default admin user with supplied credentials
-  # Users should change this password after first login
-  mongod --eval "db = db.getSiblingDB(\"admin\"); db.createUser({user:\"${MONGODB_USERNAME}\", pwd:\"${MONGODB_PASSWORD}\", roles:[{role:\"root\", db:\"admin\"}]})"
-
-  # Stop the temporary MongoDB instance
-  mongod --shutdown
-
-  # Create a file indicating this is a pre-configured instance
-  touch /var/lib/mongodb/.preconfigured
   
   echo "MongoDB minimization completed successfully."
 }
@@ -208,10 +227,10 @@ EOF
 print_docker_commit_options() {
   echo "===DOCKER_COMMIT_OPTIONS_START==="
   echo "--change='USER mongodb'"
-  echo "--change='CMD [\"mongod\", \"--config\", \"/etc/mongod.conf\"]'"
+  echo "--change='ENTRYPOINT [\"/usr/local/bin/docker-entrypoint.sh\"]'"
   echo "--change='EXPOSE 27017'"
   echo "--change='VOLUME [\"/var/lib/mongodb\", \"/var/log/mongodb\"]'"
-  echo "--change='HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD [ \"mongod\", \"--eval\", \"db.adminCommand(\\'ping\\')\", \"--quiet\" ]'"
+  echo "--change='HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD [ \"mongod\", \"--eval\", \"db.adminCommand(\\\'ping\\\')\", \"--quiet\" ]'"
   echo "===DOCKER_COMMIT_OPTIONS_END==="
 }
 

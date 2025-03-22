@@ -11,6 +11,7 @@ This repository contains scripts to create the most minimal MongoDB Docker image
 - Includes only the MongoDB server - no shell, no utilities
 - Comes with a configurable admin user
 - Includes health check for container monitoring
+- Supports custom MongoDB versions
 - Avoids using Dockerfile for a more streamlined build process
 
 ## The Minimization Approach
@@ -26,8 +27,8 @@ Our scripts use a three-phase minimization approach:
    - No shell, no mongosh, no utilities of any kind
    
 2. **Filesystem Cleanup**:
-   - Performs targeted removal of unnecessary files and directories
-   - Eliminates all unneeded components
+   - Uses `rm -rf /*` to eliminate all unnecessary files
+   - Extreme minimization for the smallest possible image size
    
 3. **Minimal Reconstruction**:
    - Rebuilds with only the exact files needed for the MongoDB server
@@ -130,7 +131,7 @@ docker run -d -p 27017:27017 \
 
 ## Health Checks
 
-The image includes a Docker HEALTHCHECK that verifies MongoDB is operating correctly. You can monitor the health status with:
+The image includes a Docker HEALTHCHECK that verifies MongoDB is operating correctly using the MongoDB binary directly. You can monitor the health status with:
 
 ```bash
 docker inspect --format='{{.State.Health.Status}}' mongodb

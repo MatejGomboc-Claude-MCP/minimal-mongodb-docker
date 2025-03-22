@@ -97,16 +97,6 @@ echo echo "mongodb:x:999:" ^> /mongodb-minimal/etc/group
 echo echo "passwd: files" ^> /mongodb-minimal/etc/nsswitch.conf
 echo echo "group: files" ^>^> /mongodb-minimal/etc/nsswitch.conf
 echo
-echo # Create JavaScript initialization file with user creation logic
-echo cat ^> /mongodb-minimal/var/lib/mongodb/init.js ^<^< EOF
-echo db = db.getSiblingDB^(\"admin\"^);
-echo db.createUser^({
-echo   user: \"${MONGODB_USERNAME}\",
-echo   pwd: \"${MONGODB_PASSWORD}\",
-echo   roles: [{role: \"root\", db: \"admin\"}]
-echo }^);
-echo EOF
-echo
 echo # NUKE EVERYTHING, then restore only our minimal copy
 echo rm -rf /* 2^>/dev/null ^|^| true
 echo mv /mongodb-minimal/* /
@@ -116,11 +106,25 @@ echo # Set proper permissions
 echo chmod 755 /usr/bin/mongod
 echo mkdir -p /var/lib/mongodb /var/log/mongodb
 echo chown -R 999:999 /var/lib/mongodb /var/log/mongodb
-echo chown 999:999 /var/lib/mongodb/init.js
 echo
-echo # Create a flag file that will trigger initialization on first container start
-echo touch /var/lib/mongodb/.initialized
-echo chown 999:999 /var/lib/mongodb/.initialized
+echo # Start MongoDB temporarily without auth to create the admin user
+echo mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb
+echo
+echo # Verify MongoDB started correctly
+echo if ! pgrep -x mongod ^> /dev/null; then
+echo   echo 'MongoDB failed to start!'
+echo   cat /var/log/mongodb/init.log
+echo   exit 1
+echo fi
+echo
+echo # Create a default admin user with password
+echo mongod --eval "db = db.getSiblingDB^(\"admin\"^); db.createUser^({user:\"${MONGODB_USERNAME}\", pwd:\"${MONGODB_PASSWORD}\", roles:[{role:\"root\", db:\"admin\"}]}^)"
+echo
+echo # Stop the temporary MongoDB instance
+echo mongod --shutdown
+echo
+echo # Create a file indicating this is a pre-configured instance
+echo touch /var/lib/mongodb/.preconfigured
 ) > %TEMP_SCRIPT%
 
 REM Step 1: Create container
@@ -148,9 +152,9 @@ docker exec %CONTAINER_ID% bash -c "chmod +x /tmp/build_script.sh && /tmp/build_
 REM Cleanup temp file
 del %TEMP_SCRIPT%
 
-REM Step 4: Export as new image with init logic and healthcheck
+REM Step 4: Export as new image with direct command and healthcheck
 docker commit --change="USER mongodb" ^
-    --change="CMD [\"sh\", \"-c\", \"if [ -f /var/lib/mongodb/.initialized ] && [ ! -f /var/lib/mongodb/.completed ]; then mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb; mongod --eval \\\"load('/var/lib/mongodb/init.js')\\\"; mongod --shutdown; rm /var/lib/mongodb/init.js; touch /var/lib/mongodb/.completed; fi; exec mongod --config /etc/mongod.conf\"]" ^
+    --change="CMD [\"mongod\", \"--config\", \"/etc/mongod.conf\"]" ^
     --change="EXPOSE 27017" ^
     --change="VOLUME [\"/var/lib/mongodb\", \"/var/log/mongodb\"]" ^
     --change="HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD [ \"mongod\", \"--eval\", \"db.adminCommand('ping')\", \"--quiet\" ]" ^

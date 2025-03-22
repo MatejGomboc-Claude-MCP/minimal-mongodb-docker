@@ -132,16 +132,6 @@ echo \"mongodb:x:999:\" > /mongodb-minimal/etc/group
 echo \"passwd: files\" > /mongodb-minimal/etc/nsswitch.conf
 echo \"group: files\" >> /mongodb-minimal/etc/nsswitch.conf
 
-# Create JavaScript initialization file with user creation logic
-cat > /mongodb-minimal/var/lib/mongodb/init.js << EOF
-db = db.getSiblingDB(\"admin\");
-db.createUser({
-  user: \"${MONGODB_USERNAME}\",
-  pwd: \"${MONGODB_PASSWORD}\",
-  roles: [{role: \"root\", db: \"admin\"}]
-});
-EOF
-
 # NUKE EVERYTHING, then restore only our minimal copy
 rm -rf /* 2>/dev/null || true
 mv /mongodb-minimal/* /
@@ -151,16 +141,32 @@ rm -rf /mongodb-minimal
 chmod 755 /usr/bin/mongod
 mkdir -p /var/lib/mongodb /var/log/mongodb
 chown -R 999:999 /var/lib/mongodb /var/log/mongodb
-chown 999:999 /var/lib/mongodb/init.js
 
-# Create a flag file that will trigger initialization on first container start
-touch /var/lib/mongodb/.initialized
-chown 999:999 /var/lib/mongodb/.initialized
+# Start MongoDB temporarily without auth to create the admin user
+mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb
+
+# Verify MongoDB started correctly
+echo 'Verifying MongoDB started correctly...'
+if ! pgrep -x mongod > /dev/null; then
+  echo 'MongoDB failed to start!'
+  cat /var/log/mongodb/init.log
+  exit 1
+fi
+
+# Create a default admin user with supplied credentials
+# Users should change this password after first login
+mongod --eval \"db = db.getSiblingDB(\\\"admin\\\"); db.createUser({user:\\\"${MONGODB_USERNAME}\\\", pwd:\\\"${MONGODB_PASSWORD}\\\", roles:[{role:\\\"root\\\", db:\\\"admin\\\"}]})\"
+
+# Stop the temporary MongoDB instance
+mongod --shutdown
+
+# Create a file indicating this is a pre-configured instance
+touch /var/lib/mongodb/.preconfigured
 "
 
-# Step 4: Export the container as a new image with direct mongod command and init logic
+# Step 4: Export the container as a new image with direct mongod command
 docker commit --change='USER mongodb' \
-    --change='CMD ["sh", "-c", "if [ -f /var/lib/mongodb/.initialized ] && [ ! -f /var/lib/mongodb/.completed ]; then mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb; mongod --eval \"load(\\\"/var/lib/mongodb/init.js\\\")\"; mongod --shutdown; rm /var/lib/mongodb/init.js; touch /var/lib/mongodb/.completed; fi; exec mongod --config /etc/mongod.conf"]' \
+    --change='CMD ["mongod", "--config", "/etc/mongod.conf"]' \
     --change='EXPOSE 27017' \
     --change='VOLUME ["/var/lib/mongodb", "/var/log/mongodb"]' \
     --change='HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD [ "mongod", "--eval", "db.adminCommand(\'ping\')", "--quiet" ]' \

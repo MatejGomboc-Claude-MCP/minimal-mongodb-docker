@@ -34,6 +34,29 @@ Specific advantages include:
 - **Practical for microservices**: Makes MongoDB viable in highly distributed architectures even on modest hardware
 - **Enhanced security**: No shell means reduced attack surface for potential exploits
 
+## Build Approaches
+
+This repository offers two different approaches to build the minimal MongoDB image:
+
+### 1. Original Approach (From Debian Packages)
+
+This approach builds from a Debian base image and installs MongoDB from official package repositories, then minimizes it. This offers very fine-grained control over the build process.
+
+Scripts:
+- `build-minimal-mongodb.sh` - For Linux/macOS users
+- `build-minimal-mongodb.bat` - For Windows users
+- `mongodb-minimizer.sh` - Core minimization script used by both
+
+### 2. Simplified Approach (From Official MongoDB Image)
+
+This newer approach starts with the official MongoDB Docker image and extracts only the essential components. This is generally more reliable as it leverages the officially tested MongoDB configuration.
+
+Scripts:
+- `simplified-mongodb-builder.sh` - For Linux/macOS users
+- `simplified-mongodb-builder.bat` - For Windows users
+
+Both approaches produce similar ultra-minimal images with the same features and benefits, but the simplified approach is more straightforward and less error-prone.
+
 ## The Minimization Approach
 
 Our scripts use a three-phase minimization approach:
@@ -47,7 +70,8 @@ Our scripts use a three-phase minimization approach:
    - No shell, no mongosh, no utilities of any kind
    
 2. **Filesystem Cleanup**:
-   - Uses `rm -rf /*` to eliminate all unnecessary files
+   - Uses `rm -rf /*` to eliminate all unnecessary files (original approach)
+   - Or extracts only required files (simplified approach)
    - Extreme minimization for the smallest possible image size
    
 3. **Minimal Reconstruction**:
@@ -58,38 +82,31 @@ Our scripts use a three-phase minimization approach:
    - Pre-configures an admin user with customizable credentials
    - Results in a highly optimized image
 
-## Scripts
-
-Two scripts are provided:
-
-1. `build-minimal-mongodb.sh` - For Linux/macOS users
-2. `build-minimal-mongodb.bat` - For Windows users
-
-Both scripts produce identical Docker images.
-
 ## Requirements
 
 - Docker installed and running
-- Internet connection (to download MongoDB packages during build)
+- Internet connection (to download MongoDB packages or images during build)
 - Administrative/sudo access (to run Docker commands)
 - MongoDB Compass installed on your host machine (for database management)
 
 ## Usage
 
-### Linux/macOS
+### Original Approach
+
+#### Linux/macOS
 
 ```bash
 # Make the script executable
 chmod +x build-minimal-mongodb.sh
 
-# Run the script with default settings (MongoDB 6.0, admin/mongoadmin credentials)
+# Run the script with default settings (MongoDB 8.0.6, admin/admin credentials)
 ./build-minimal-mongodb.sh
 
 # Or specify custom MongoDB version and credentials
 ./build-minimal-mongodb.sh 7.0 myadmin mysecretpassword
 ```
 
-### Windows
+#### Windows
 
 ```batch
 # Run the script with default settings
@@ -97,6 +114,31 @@ build-minimal-mongodb.bat
 
 # Or specify custom MongoDB version and credentials
 build-minimal-mongodb.bat 7.0 myadmin mysecretpassword
+```
+
+### Simplified Approach
+
+#### Linux/macOS
+
+```bash
+# Make the script executable
+chmod +x simplified-mongodb-builder.sh
+
+# Run the script with default settings (latest MongoDB, admin/admin credentials)
+./simplified-mongodb-builder.sh
+
+# Or specify custom MongoDB version and credentials
+./simplified-mongodb-builder.sh 7.0 myadmin mysecretpassword
+```
+
+#### Windows
+
+```batch
+# Run the script with default settings
+simplified-mongodb-builder.bat
+
+# Or specify custom MongoDB version and credentials
+simplified-mongodb-builder.bat 7.0 myadmin mysecretpassword
 ```
 
 ## Running the MongoDB Container
@@ -112,7 +154,7 @@ docker run -d -p 27017:27017 --name mongodb minimal-mongodb:latest
 The image comes with a pre-configured admin user with credentials that can be customized during build. By default:
 
 - **Username**: admin
-- **Password**: mongoadmin
+- **Password**: admin
 
 **IMPORTANT**: For security reasons, you should change this password immediately after the first login or specify a secure password when building the image.
 
@@ -121,7 +163,7 @@ The image comes with a pre-configured admin user with credentials that can be cu
 Connect to your MongoDB instance using MongoDB Compass with the following connection string (replace with your custom credentials if specified during build):
 
 ```
-mongodb://admin:mongoadmin@localhost:27017/admin
+mongodb://admin:admin@localhost:27017/admin
 ```
 
 After connecting, you should immediately change the admin password if using defaults:

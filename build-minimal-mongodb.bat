@@ -7,38 +7,48 @@ FOR /F "tokens=*" %%i IN ('docker run -d debian:slim-bullseye sleep infinity') D
 REM Step 2: Install MongoDB and dependencies
 docker exec %CONTAINER_ID% bash -c "apt-get update && apt-get install -y wget gnupg && wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add - && echo \"deb http://repo.mongodb.org/apt/debian bullseye/mongodb-org/6.0 main\" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list && apt-get update && apt-get install -y --no-install-recommends mongodb-org-server mongodb-org-shell && apt-get clean"
 
-REM Step 3: Ultra-aggressive cleanup for absolute minimal image
-docker exec %CONTAINER_ID% bash -c "apt-get -y --purge autoremove && apt-get -y --purge remove gnupg wget && rm -rf /var/lib/apt /var/lib/dpkg /usr/bin/apt* /usr/bin/dpkg* /sbin/dpkg* /usr/share/dpkg"
+REM Step 3: EXTREME minimization - maximum deletion approach
+docker exec %CONTAINER_ID% bash -c "
+# First, identify and save the absolute essentials
+mkdir -p /mongodb-preserve
+cp /usr/bin/mongod /mongodb-preserve/
+cp /usr/bin/mongosh /mongodb-preserve/
 
-REM Identify MongoDB binaries and libraries to preserve
-docker exec %CONTAINER_ID% bash -c "mkdir -p /tmp/mongodb-deps && echo '/usr/bin/mongod' > /tmp/mongodb-deps/preserve.txt && echo '/usr/bin/mongosh' >> /tmp/mongodb-deps/preserve.txt && ldd /usr/bin/mongod | grep -o '/[^ ]*' >> /tmp/mongodb-deps/preserve.txt && ldd /usr/bin/mongosh | grep -o '/[^ ]*' >> /tmp/mongodb-deps/preserve.txt"
+# Find and copy all required dynamic libraries
+for lib in \$(ldd /usr/bin/mongod | grep -o \"/[^ ]*\" | sort -u); do
+  if [ -f \"\$lib\" ]; then
+    dir=\$(dirname \"\$lib\")
+    mkdir -p \"/mongodb-preserve\$dir\"
+    cp \"\$lib\" \"/mongodb-preserve\$lib\"
+  fi
+done
 
-REM Remove entire unnecessary directory trees
-docker exec %CONTAINER_ID% bash -c "rm -rf /usr/share/doc /usr/share/man /usr/share/info && rm -rf /usr/share/locale/* && rm -rf /var/cache/* /var/tmp/* /tmp/{*,.[!.],..?*} 2> /dev/null || true && rm -rf /usr/share/common-licenses && rm -rf /usr/share/pixmaps /usr/share/applications && find /var/log -type f -delete"
+for lib in \$(ldd /usr/bin/mongosh | grep -o \"/[^ ]*\" | sort -u); do
+  if [ -f \"\$lib\" ]; then
+    dir=\$(dirname \"\$lib\")
+    mkdir -p \"/mongodb-preserve\$dir\"
+    cp \"\$lib\" \"/mongodb-preserve\$lib\"
+  fi
+done
 
-REM Keep only UTC and Etc timezones (MongoDB needs these)
-docker exec %CONTAINER_ID% bash -c "find /usr/share/zoneinfo -mindepth 1 -maxdepth 1 -type d -not -name UTC -not -name Etc -exec rm -rf {} \;"
+# Save minimal configuration directories
+mkdir -p /mongodb-preserve/etc
+mkdir -p /mongodb-preserve/var/lib/mongodb
+mkdir -p /mongodb-preserve/var/log/mongodb
+mkdir -p /mongodb-preserve/tmp
+mkdir -p /mongodb-preserve/usr/share/zoneinfo/UTC
+mkdir -p /mongodb-preserve/usr/share/zoneinfo/Etc
 
-REM Strip binaries to reduce size
-docker exec %CONTAINER_ID% bash -c "find /usr/bin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true && find /usr/sbin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true && find /bin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true && find /sbin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true"
+# Copy timezone data (MongoDB needs this)
+cp -r /usr/share/zoneinfo/UTC /mongodb-preserve/usr/share/zoneinfo/
+cp -r /usr/share/zoneinfo/Etc /mongodb-preserve/usr/share/zoneinfo/
 
-REM Remove non-essential binaries (preserving those needed by MongoDB)
-docker exec %CONTAINER_ID% bash -c "for f in \$(find /usr/bin /usr/sbin /bin /sbin -type f); do if ! grep -q \"\$f\" /tmp/mongodb-deps/preserve.txt; then rm -f \"\$f\" 2>/dev/null || true; fi; done"
+# Create MongoDB user backup
+grep \"^mongodb:\" /etc/passwd > /mongodb-preserve/passwd
+grep \"^mongodb:\" /etc/group > /mongodb-preserve/group
 
-REM Remove all non-MongoDB init scripts and services
-docker exec %CONTAINER_ID% bash -c "rm -rf /etc/init.d/* /etc/rc* && rm -rf /etc/cron* /var/spool/cron && rm -rf /etc/logrotate* /etc/ppp /etc/ssh /etc/modprobe.d /etc/modules-load.d"
-
-REM Remove unnecessary language files and libraries
-docker exec %CONTAINER_ID% bash -c "rm -rf /usr/lib/python* && rm -rf /usr/share/locale /usr/lib/locale && mkdir -p /usr/share/locale/C.UTF-8"
-
-REM Clean up temporary files
-docker exec %CONTAINER_ID% bash -c "rm -rf /tmp/mongodb-deps"
-
-REM Step 4: Use default Debian MongoDB configuration and set permissions
-docker exec %CONTAINER_ID% bash -c "mkdir -p /var/log/mongodb && mkdir -p /var/lib/mongodb && chown -R mongodb:mongodb /var/lib/mongodb /var/log/mongodb"
-
-REM Create identical configuration file using here-doc approach
-docker exec %CONTAINER_ID% bash -c "cat > /etc/mongod.conf << 'EOF'
+# Save minimal MongoDB configuration
+cat > /mongodb-preserve/mongod.conf << EOF
 # mongod.conf
 
 # Where and how to store data.
@@ -66,19 +76,40 @@ processManagement:
 # Security settings
 security:
   authorization: enabled
-EOF"
+EOF
 
-REM Set permissions for mongod binary
-docker exec %CONTAINER_ID% bash -c "chmod 755 /usr/bin/mongod"
+# Now REMOVE EVERYTHING except core directories
+rm -rf /bin/* /sbin/* /usr/bin/* /usr/sbin/* /usr/local/bin/* /usr/local/sbin/*
+rm -rf /etc/*
+rm -rf /usr/share/*
+rm -rf /usr/lib/*
+rm -rf /var/lib/*
+rm -rf /var/cache/*
+rm -rf /var/log/*
+rm -rf /tmp/*
+rm -rf /root/*
+rm -rf /home/*
 
-REM Step 5: Export as new image with direct mongod command
+# Restore only what MongoDB needs from our preserved copies
+cp -r /mongodb-preserve/* /
+cat /mongodb-preserve/passwd >> /etc/passwd
+cat /mongodb-preserve/group >> /etc/group
+mv /mongod.conf /etc/mongod.conf
+chmod 755 /usr/bin/mongod /usr/bin/mongosh
+chown -R mongodb:mongodb /var/lib/mongodb /var/log/mongodb
+
+# Clean up preservation directory
+rm -rf /mongodb-preserve
+"
+
+REM Step 4: Export as new image with direct mongod command
 docker commit --change="USER mongodb" ^
               --change="CMD [\"mongod\", \"--config\", \"/etc/mongod.conf\"]" ^
               --change="EXPOSE 27017" ^
               --change="VOLUME [\"/var/lib/mongodb\", \"/var/log/mongodb\"]" ^
               %CONTAINER_ID% minimal-mongodb:latest
 
-REM Step 6: Cleanup
+REM Step 5: Cleanup
 docker stop %CONTAINER_ID%
 docker rm %CONTAINER_ID%
 

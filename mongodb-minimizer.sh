@@ -23,13 +23,13 @@ install_mongodb() {
   echo "Installing MongoDB ${MONGODB_VERSION}..."
   
   # Extract the major.minor version for the repository
-  MONGODB_MAJOR_MINOR=$(echo "${MONGODB_VERSION}" | cut -d. -f1,2)
+  MONGODB_MAJOR_MINOR="$(echo "${MONGODB_VERSION}" | cut -d. -f1,2)"
   
   # Update package information
   apt-get update
   
   # Install required packages
-  apt-get install -y wget gnupg binutils curl procps
+  apt-get install -y wget gnupg binutils curl procps openssl
   
   # Import MongoDB GPG key
   curl -fsSL "https://www.mongodb.org/static/pgp/server-${MONGODB_MAJOR_MINOR}.asc" | \
@@ -75,12 +75,17 @@ minimize_mongodb() {
 
   # Copy MongoDB binary and strip it
   echo "Copying and stripping MongoDB binary..."
-  cp "$(command -v mongod)" /mongodb-minimal/usr/bin/
+  MONGOD_PATH="$(command -v mongod)"
+  if [ -z "$MONGOD_PATH" ]; then
+    echo "ERROR: mongod executable not found!"
+    exit 1
+  fi
+  cp "$MONGOD_PATH" /mongodb-minimal/usr/bin/
   strip --strip-all /mongodb-minimal/usr/bin/mongod
 
   # Find and copy required libraries
   echo "Identifying and copying required libraries..."
-  for lib in $(ldd "$(command -v mongod)" | grep -o "/[^ ]*" | sort -u); do
+  for lib in $(ldd "$MONGOD_PATH" | grep -o "/[^ ]*" | sort -u); do
       if [ -f "$lib" ]; then
           mkdir -p "/mongodb-minimal$(dirname "$lib")"
           cp "$lib" "/mongodb-minimal$lib"
@@ -104,7 +109,7 @@ minimize_mongodb() {
   echo "Checking for dynamically loaded libraries..."
   for so in $(find /mongodb-minimal -name "*.so*"); do
     # Extract direct references from the .so file
-    for ref in $(objdump -p "$so" | grep NEEDED | awk '{print $2}'); do
+    for ref in $(objdump -p "$so" 2>/dev/null | grep NEEDED | awk '{print $2}'); do
       # Find the full path of each referenced library
       full_path=$(find /lib /usr/lib -name "$ref" | head -1)
       if [ -n "$full_path" ] && [ ! -f "/mongodb-minimal$full_path" ]; then
@@ -117,8 +122,17 @@ minimize_mongodb() {
 
   # Copy only the absolutely essential timezone data (MongoDB needs this)
   echo "Copying essential timezone data..."
-  cp -r /usr/share/zoneinfo/UTC /mongodb-minimal/usr/share/zoneinfo/
-  cp -r /usr/share/zoneinfo/Etc /mongodb-minimal/usr/share/zoneinfo/
+  if [ -d /usr/share/zoneinfo/UTC ]; then
+    cp -r /usr/share/zoneinfo/UTC /mongodb-minimal/usr/share/zoneinfo/
+  else
+    echo "WARNING: UTC timezone data not found!"
+  fi
+  
+  if [ -d /usr/share/zoneinfo/Etc ]; then
+    cp -r /usr/share/zoneinfo/Etc /mongodb-minimal/usr/share/zoneinfo/
+  else
+    echo "WARNING: Etc timezone data not found!"
+  fi
 
   # Prepare data directory
   echo "Preparing MongoDB data directory..."
@@ -130,32 +144,44 @@ minimize_mongodb() {
 
   # Start MongoDB temporarily to create admin user
   echo "Starting MongoDB to create admin user..."
-  mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb
+  if ! mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb; then
+    echo "ERROR: Failed to start MongoDB!"
+    cat /var/log/mongodb/init.log
+    exit 1
+  fi
 
   # Wait for MongoDB to start properly
   echo "Waiting for MongoDB to start..."
   timeout=30
+  started=false
   for ((i=1; i<=timeout; i++)); do
     if mongod --eval "db.adminCommand('ping')" >/dev/null 2>&1; then
       echo "MongoDB started successfully after $i seconds."
+      started=true
       break
     fi
-    if [ $i -eq $timeout ]; then
-      echo "MongoDB failed to start after $timeout seconds!"
-      cat /var/log/mongodb/init.log
-      exit 1
-    fi
     sleep 1
-    echo -n "."
+    printf "."
   done
   echo ""
+  
+  if [ "$started" != "true" ]; then
+    echo "ERROR: MongoDB failed to start after $timeout seconds!"
+    cat /var/log/mongodb/init.log
+    exit 1
+  fi
 
   # Create a default admin user with supplied credentials during build
   echo "Creating admin user: ${MONGODB_USERNAME}"
   # Properly escape any special characters in username/password
-  ESCAPED_USERNAME=$(echo "${MONGODB_USERNAME}" | sed 's/"/\\"/g')
-  ESCAPED_PASSWORD=$(echo "${MONGODB_PASSWORD}" | sed 's/"/\\"/g')
-  mongod --eval "db = db.getSiblingDB(\"admin\"); db.createUser({user:\"${ESCAPED_USERNAME}\", pwd:\"${ESCAPED_PASSWORD}\", roles:[{role:\"root\", db:\"admin\"}]})"
+  ESCAPED_USERNAME=$(printf '%s' "${MONGODB_USERNAME}" | sed 's/"/\\"/g')
+  ESCAPED_PASSWORD=$(printf '%s' "${MONGODB_PASSWORD}" | sed 's/"/\\"/g')
+  
+  if ! mongod --eval "db = db.getSiblingDB(\"admin\"); db.createUser({user:\"${ESCAPED_USERNAME}\", pwd:\"${ESCAPED_PASSWORD}\", roles:[{role:\"root\", db:\"admin\"}]})"; then
+    echo "ERROR: Failed to create admin user!"
+    cat /var/log/mongodb/init.log
+    exit 1
+  fi
 
   # Create keyfile for authentication
   echo "Creating MongoDB keyfile..."
@@ -165,34 +191,48 @@ minimize_mongodb() {
 
   # Stop MongoDB and copy the initialized data files
   echo "Stopping MongoDB..."
-  mongod --dbpath /var/lib/mongodb --shutdown
+  if ! mongod --dbpath /var/lib/mongodb --shutdown; then
+    echo "WARNING: Problem shutting down MongoDB gracefully."
+  fi
   
   # Ensure MongoDB has completely stopped
   echo "Waiting for MongoDB process to terminate..."
   timeout=30
+  stopped=false
   for ((i=1; i<=timeout; i++)); do
     if ! pgrep -x mongod > /dev/null; then
       echo "MongoDB stopped successfully after $i seconds."
+      stopped=true
       break
     fi
-    if [ $i -eq $timeout ]; then
-      echo "Warning: MongoDB did not shut down gracefully after $timeout seconds, terminating process..."
-      pkill -9 mongod 2>/dev/null || true
-      sleep 2
-    fi
     sleep 1
-    echo -n "."
+    printf "."
   done
   echo ""
+  
+  # Forcefully terminate if still running
+  if [ "$stopped" != "true" ]; then
+    echo "Warning: MongoDB did not shut down gracefully after $timeout seconds, terminating process..."
+    pkill -9 mongod 2>/dev/null || true
+    sleep 2
+    
+    # Final check to ensure it's really stopped
+    if pgrep -x mongod > /dev/null; then
+      echo "ERROR: Unable to stop MongoDB process!"
+      exit 1
+    fi
+  fi
   
   # Copy the pre-initialized data files to ensure admin user exists
   echo "Copying initialized MongoDB data files..."
   mkdir -p /mongodb-minimal/var/lib/mongodb
-  cp -a /var/lib/mongodb/* /mongodb-minimal/var/lib/mongodb/ 2>/dev/null || true
+  if ! cp -a /var/lib/mongodb/* /mongodb-minimal/var/lib/mongodb/ 2>/dev/null; then
+    echo "WARNING: Some MongoDB data files could not be copied. This might be normal if the database is empty."
+  fi
 
   # Create absolute minimal MongoDB configuration with authentication enabled
   echo "Creating MongoDB configuration file..."
-  cat > /mongodb-minimal/etc/mongod.conf << EOF
+  cat > /mongodb-minimal/etc/mongod.conf << 'EOF'
 storage:
   dbPath: /var/lib/mongodb
   journal:
@@ -227,7 +267,6 @@ EOF
   chmod 750 /mongodb-minimal/var/log/mongodb
   
   # Directly move files from minimal directory to root
-  # This approach eliminates the need for extra binaries
   echo "Moving minimal files to root filesystem..."
   cd /mongodb-minimal
 
@@ -236,7 +275,9 @@ EOF
   IFS=$'\n'
   
   # For each directory under /mongodb-minimal, copy its contents to the root
-  for dir in $(find . -mindepth 1 -maxdepth 1 -type d | cut -c 3-); do
+  # Using a more reliable method for handling spaces in filenames
+  find . -mindepth 1 -maxdepth 1 -type d -print0 | while IFS= read -r -d $'\0' dir; do
+    dir="${dir#./}"
     # Ensure target directory exists
     mkdir -p "/$dir"
     
@@ -245,13 +286,18 @@ EOF
       target_path="/${item#./}"
       target_dir="$(dirname "$target_path")"
       mkdir -p "$target_dir"
-      cp -a "$item" "$target_path" 2>/dev/null || true
+      if ! cp -a "$item" "$target_path" 2>/dev/null; then
+        echo "WARNING: Failed to copy $item to $target_path"
+      fi
     done
   done
   
   # Move any files in the root of /mongodb-minimal
-  for file in $(find . -maxdepth 1 -type f | cut -c 3-); do
-    cp -a "$file" "/$file" 2>/dev/null || true
+  find . -maxdepth 1 -type f -print0 | while IFS= read -r -d $'\0' file; do
+    file="${file#./}"
+    if ! cp -a "$file" "/$file" 2>/dev/null; then
+      echo "WARNING: Failed to copy $file to /$file"
+    fi
   done
   
   # Restore original IFS
@@ -286,6 +332,13 @@ EOF
   
   if [ ! -f "/etc/mongodb/keyfile" ]; then
     echo "ERROR: MongoDB keyfile is missing!"
+    exit 1
+  fi
+  
+  # Verify library dependencies can be resolved
+  echo "Checking library dependencies..."
+  if ! ldd /usr/bin/mongod >/dev/null 2>&1; then
+    echo "ERROR: MongoDB binary has unresolved dependencies!"
     exit 1
   fi
   

@@ -14,23 +14,28 @@ apt-get update
 apt-get install -y --no-install-recommends mongodb-org-server mongodb-org-shell
 apt-get clean
 
-# Step 3: Advanced cleanup to create truly minimal image
+# Step 3: Ultra-aggressive cleanup for absolute minimal image
 # Remove package management tools after installation
 apt-get -y --purge autoremove
 apt-get -y --purge remove gnupg wget
-rm -rf /var/lib/apt /var/lib/dpkg
+rm -rf /var/lib/apt /var/lib/dpkg /usr/bin/apt* /usr/bin/dpkg* /sbin/dpkg* /usr/share/dpkg
 
-# Remove all unnecessary directories
+# Identify MongoDB binaries and libraries to preserve
+mkdir -p /tmp/mongodb-deps
+echo "/usr/bin/mongod" > /tmp/mongodb-deps/preserve.txt
+echo "/usr/bin/mongosh" >> /tmp/mongodb-deps/preserve.txt
+ldd /usr/bin/mongod | grep -o "/[^ ]*" >> /tmp/mongodb-deps/preserve.txt
+ldd /usr/bin/mongosh | grep -o "/[^ ]*" >> /tmp/mongodb-deps/preserve.txt
+
+# Remove entire unnecessary directory trees
 rm -rf /usr/share/doc /usr/share/man /usr/share/info
 rm -rf /usr/share/locale/*
-rm -rf /var/cache/* /var/tmp/* /tmp/*
+rm -rf /var/cache/* /var/tmp/* /tmp/{*,.[!.],..?*} 2> /dev/null || true
 rm -rf /usr/share/common-licenses
 rm -rf /usr/share/pixmaps /usr/share/applications
-
-# Remove all log files except MongoDB log directory
 find /var/log -type f -delete
 
-# Keep only minimal zoneinfo data (MongoDB needs this)
+# Keep only UTC and Etc timezones (MongoDB needs these)
 find /usr/share/zoneinfo -mindepth 1 -maxdepth 1 -type d -not -name UTC -not -name Etc -exec rm -rf {} \;
 
 # Strip binaries to reduce size
@@ -38,6 +43,32 @@ find /usr/bin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true
 find /usr/sbin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true
 find /bin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true
 find /sbin -type f -exec strip --strip-unneeded {} \; 2>/dev/null || true
+
+# Remove non-essential binaries (preserving those needed by MongoDB)
+for f in $(find /usr/bin /usr/sbin /bin /sbin -type f); do
+  if ! grep -q "$f" /tmp/mongodb-deps/preserve.txt; then
+    rm -f "$f" 2>/dev/null || true
+  fi
+done
+
+# Remove all non-MongoDB init scripts
+rm -rf /etc/init.d/* /etc/rc*
+
+# Remove all cron-related files
+rm -rf /etc/cron* /var/spool/cron
+
+# Remove unnecessary services and configs
+rm -rf /etc/logrotate* /etc/ppp /etc/ssh /etc/modprobe.d /etc/modules-load.d
+
+# Remove any unused Python files (MongoDB is C++)
+rm -rf /usr/lib/python*
+
+# Remove non-C locales
+rm -rf /usr/share/locale /usr/lib/locale
+mkdir -p /usr/share/locale/C.UTF-8
+
+# Clean up temporary files
+rm -rf /tmp/mongodb-deps
 '
 
 # Step 4: Use default Debian MongoDB configuration with minor adjustments

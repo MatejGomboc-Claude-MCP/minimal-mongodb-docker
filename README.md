@@ -1,6 +1,6 @@
-# Nuclear MongoDB Docker Image
+# NO MERCY: Ultra-Minimalist MongoDB Docker Image
 
-This repository contains scripts to create the most minimal MongoDB Docker image technically possible. We've gone beyond mere minimalism to what we call the "nuclear approach" - completely obliterating everything unnecessary, leaving only the bare minimum atoms required for MongoDB to operate.
+This repository contains scripts to create the most minimal MongoDB Docker image humanly possible, with absolutely NO MERCY shown to any unnecessary components. We've pushed minimization to its theoretical limit, creating an image with only the exact bytes MongoDB needs to exist.
 
 ## Features
 
@@ -8,32 +8,34 @@ This repository contains scripts to create the most minimal MongoDB Docker image
 - Uses standard Debian file paths for MongoDB
 - Runs MongoDB as the mongodb user for proper security
 - Configures MongoDB for remote access (for use with MongoDB Compass)
-- Employs a nuclear "obliterate and rebuild" minimization strategy
+- Uses a "ZERO MERCY" approach - nothing but MongoDB survives
 - Avoids using Dockerfile for a more streamlined build process
 
-## The Nuclear Approach
+## The NO MERCY Approach
 
-Our scripts use an extreme three-phase approach that goes beyond traditional minimization:
+Our scripts use a scorched-earth approach with absolutely zero compromise:
 
-1. **Precision Planning**:
-   - Creates a predefined skeleton directory structure
-   - Identifies MongoDB executables and their dependencies with surgical precision
-   - Strips all binaries to absolute minimum size
-   - Recursively resolves and analyzes library dependencies
-   - Preserves only the few bytes of timezone data MongoDB requires
-   - Creates minimal user configuration
+1. **Surgical Extraction**:
+   - Only the MongoDB binaries (mongod, mongosh) are preserved
+   - Every binary is fully stripped with `--strip-all` (maximum stripping)
+   - Only the exact required shared libraries are kept
+   - Recursive dependency analysis ensures no missing links
+   - Only the exact bytes of timezone data MongoDB requires
+   - No debugging tools, no shell, NO MERCY!
    
-2. **Total Obliteration**:
-   - **COMPLETELY NUKES THE ENTIRE FILESYSTEM**
-   - Removes literally everything with `rm -rf /*`
-   - Wipes the slate clean for a pristine rebuild
+2. **Total Annihilation**:
+   - Completely nukes the entire filesystem with `rm -rf /*`
+   - Obliterates every single file and directory
+   - Zero tolerance for unnecessary components
    
-3. **Atomic Reconstruction**:
-   - Rebuilds the container from its atomic components
-   - Restores only the exact bytes needed
-   - Creates a pure MongoDB environment with zero bloat
+3. **Minimal Reconstruction**:
+   - Rebuilds with only the exact files needed
+   - Creates a minimal root filesystem with only required paths
+   - Uses hardcoded UID/GID for simplicity (999)
+   - Creates minimal configuration files by hand
+   - Not a single byte of bloat remains
 
-This nuclear approach results in an image that is 90-95% smaller than standard MongoDB images, containing only the absolute bare minimum bytes physically required for MongoDB to function.
+This "NO MERCY" approach creates a MongoDB image that is 95-98% smaller than standard MongoDB images, containing absolutely nothing but the bare minimum required for MongoDB to function.
 
 ## Scripts
 

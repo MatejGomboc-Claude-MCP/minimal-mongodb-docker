@@ -156,9 +156,9 @@ minimize_mongodb() {
     fi
   fi
 
-  # Start MongoDB temporarily to create admin user
+  # Start MongoDB temporarily to create admin user - with bind_ip_all
   echo "Starting MongoDB to create admin user..."
-  if ! mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb; then
+  if ! mongod --fork --bind_ip_all --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb; then
     echo "ERROR: Failed to start MongoDB!"
     cat /var/log/mongodb/init.log
     exit 1

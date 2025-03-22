@@ -43,7 +43,7 @@ install_mongodb() {
   apt-get update
   
   # Install MongoDB server
-  apt-get install -y --no-install-recommends mongodb-org-server
+  apt-get install -y --no-install-recommends mongodb-org-server mongodb-mongosh
   
   # Clean up package cache
   apt-get clean
@@ -68,7 +68,7 @@ minimize_mongodb() {
   fi
 
   # Install essential packages to ensure they are available
-  apt-get install -y --no-install-recommends coreutils
+  apt-get install -y --no-install-recommends coreutils netcat-openbsd
 
   # Create minimization directory structure
   mkdir -p /mongodb-minimal/{etc,var/lib/mongodb,var/log/mongodb,usr/share/zoneinfo,tmp,usr/bin}
@@ -175,14 +175,13 @@ minimize_mongodb() {
     exit 1
   fi
   
-  # Wait for MongoDB to become available by using the MongoDB networking check
+  # Wait for MongoDB to become available by using netcat to check the port
   echo "Waiting for MongoDB to become available..."
   timeout=30
   started=false
   for ((i=1; i<=timeout; i++)); do
-    # This explicitly uses localhost to ensure we're connecting to the local MongoDB instance
-    if mongod --host 127.0.0.1 --eval "db.adminCommand('ping')" >/dev/null 2>&1; then
-      echo "MongoDB started successfully after $i seconds."
+    if nc -z localhost 27017; then
+      echo "MongoDB port is open after $i seconds."
       started=true
       break
     fi
@@ -192,33 +191,43 @@ minimize_mongodb() {
   echo ""
   
   if [ "$started" != "true" ]; then
-    echo "ERROR: MongoDB failed connection test after $timeout seconds!"
+    echo "ERROR: MongoDB port is not open after $timeout seconds!"
     cat /var/log/mongodb/init.log
     
     # Check if the MongoDB process is still running
     if pgrep -x mongod > /dev/null; then
-      echo "Note: MongoDB process is still running, but connection test failed."
+      echo "Note: MongoDB process is running, but port is not accessible."
       
       # Try to get MongoDB server status directly from log file
       echo "Server log extract:"
       tail -n 20 /var/log/mongodb/init.log
     else
-      echo "ERROR: MongoDB process is no longer running!"
+      echo "ERROR: MongoDB process is not running!"
     fi
     
     exit 1
   fi
 
-  # Create a default admin user with supplied credentials during build
+  # Use mongosh to create admin user
   echo "Creating admin user: ${MONGODB_USERNAME}"
   # Properly escape any special characters in username/password
   ESCAPED_USERNAME=$(printf '%s' "${MONGODB_USERNAME}" | sed 's/"/\\"/g')
   ESCAPED_PASSWORD=$(printf '%s' "${MONGODB_PASSWORD}" | sed 's/"/\\"/g')
   
-  if ! mongod --host 127.0.0.1 --eval "db = db.getSiblingDB(\"admin\"); db.createUser({user:\"${ESCAPED_USERNAME}\", pwd:\"${ESCAPED_PASSWORD}\", roles:[{role:\"root\", db:\"admin\"}]})"; then
-    echo "ERROR: Failed to create admin user!"
-    cat /var/log/mongodb/init.log
-    exit 1
+  # Try to use mongosh if available
+  if command -v mongosh > /dev/null; then
+    if ! mongosh --host 127.0.0.1 --eval "db = db.getSiblingDB('admin'); db.createUser({user:'${ESCAPED_USERNAME}', pwd:'${ESCAPED_PASSWORD}', roles:[{role:'root', db:'admin'}]})"; then
+      echo "ERROR: Failed to create admin user with mongosh!"
+      cat /var/log/mongodb/init.log
+      exit 1
+    fi
+  else
+    # Fall back to mongod --eval for creating user
+    if ! mongod --eval "db = db.getSiblingDB('admin'); db.createUser({user:'${ESCAPED_USERNAME}', pwd:'${ESCAPED_PASSWORD}', roles:[{role:'root', db:'admin'}]})" --dbpath /var/lib/mongodb --port 27017; then
+      echo "ERROR: Failed to create admin user!"
+      cat /var/log/mongodb/init.log
+      exit 1
+    fi
   fi
 
   # Stop MongoDB and copy the initialized data files

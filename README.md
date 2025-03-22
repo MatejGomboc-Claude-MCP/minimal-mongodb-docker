@@ -1,14 +1,14 @@
 # Ultra-Minimalist MongoDB Docker Image
 
-This repository contains scripts to create the most minimal MongoDB Docker image possible, with no unnecessary components. The approach focuses on creating an image with only the exact files MongoDB needs to function.
+This repository contains scripts to create the most minimal MongoDB Docker image possible. The approach focuses on creating an image with only the MongoDB server binary and its required dependencies, with no shell or additional tools.
 
 ## Features
 
-- Creates an extremely small MongoDB container
+- Creates an extremely small MongoDB container (potentially 85-95% smaller than standard images)
 - Uses standard Debian file paths for MongoDB
 - Runs MongoDB as the mongodb user for proper security
 - Configures MongoDB for remote access (for use with MongoDB Compass)
-- Uses an aggressive minimization approach - only MongoDB-related files remain
+- Includes only the MongoDB server - no shell, no utilities
 - Avoids using Dockerfile for a more streamlined build process
 
 ## The Minimization Approach
@@ -16,25 +16,23 @@ This repository contains scripts to create the most minimal MongoDB Docker image
 Our scripts use a three-phase minimization approach:
 
 1. **Precision Selection**:
-   - Only the MongoDB binaries (mongod, mongosh) are preserved
-   - Every binary is fully stripped with `--strip-all` to reduce size
+   - Only the MongoDB server binary (mongod) is preserved
+   - The binary is fully stripped with `--strip-all` to reduce size
    - Only the required shared libraries are identified and kept
    - Recursive dependency analysis ensures all needed libraries are included
    - Only the essential timezone data MongoDB requires is preserved
-   - No debugging tools or shell utilities are included
+   - No shell, no mongosh, no utilities of any kind
    
 2. **Filesystem Cleanup**:
    - Removes the entire filesystem with `rm -rf /*`
    - Eliminates all unnecessary files and directories
    
 3. **Minimal Reconstruction**:
-   - Rebuilds with only the exact files needed for MongoDB
+   - Rebuilds with only the exact files needed for the MongoDB server
    - Creates a minimal root filesystem with only required paths
    - Uses standard MongoDB UID/GID (999) for proper permissions
    - Creates minimal configuration files
    - Results in a highly optimized image
-
-This approach creates a MongoDB image that is significantly smaller than standard MongoDB images (potentially 80-90% smaller), containing only what's required for MongoDB to function.
 
 ## Scripts
 
@@ -50,6 +48,7 @@ Both scripts produce identical Docker images.
 - Docker installed and running
 - Internet connection (to download MongoDB packages during build)
 - Administrative/sudo access (to run Docker commands)
+- MongoDB Compass installed on your host machine (for database management)
 
 ## Usage
 
@@ -78,29 +77,32 @@ After building the image, you can run it with:
 docker run -d -p 27017:27017 --name mongodb minimal-mongodb:latest
 ```
 
-### Initial Setup
+## Database Management
 
-On first run, you need to set up a MongoDB user for authentication:
+Since this image does not include the MongoDB shell (mongosh), all database management must be done remotely through MongoDB Compass or another client.
+
+### Initial User Setup with Docker and mongosh
+
+To create the first admin user, you'll temporarily need mongosh. If you don't have it installed, you can use a standard MongoDB container just for this purpose:
 
 ```bash
-# Run MongoDB temporarily without authentication
-docker run -d -p 27017:27017 --name mongodb-setup minimal-mongodb:latest mongod --config /etc/mongod.conf --auth false
+# Start the minimal MongoDB instance without authentication temporarily
+docker run -d -p 27017:27017 --name mongodb-minimal minimal-mongodb:latest mongod --config /etc/mongod.conf --auth false
 
-# Connect to the MongoDB instance
-docker exec -it mongodb-setup mongosh
+# Use a temporary standard MongoDB container to connect and create an admin user
+docker run --rm -it --network host mongo:latest mongosh --eval '
+  db = db.getSiblingDB("admin");
+  db.createUser({
+    user: "mongoAdmin",
+    pwd: "securePassword",  // Change this!
+    roles: [ { role: "userAdminAnyDatabase", db: "admin" }, "readWriteAnyDatabase" ]
+  });
+  quit();
+'
 
-# In the MongoDB shell, create an admin user
-use admin
-db.createUser({
-  user: "mongoAdmin",
-  pwd: "securePassword",  # Change this!
-  roles: [ { role: "userAdminAnyDatabase", db: "admin" }, "readWriteAnyDatabase" ]
-})
-
-# Exit and clean up
-exit
-docker stop mongodb-setup
-docker rm mongodb-setup
+# Stop the minimal MongoDB instance
+docker stop mongodb-minimal
+docker rm mongodb-minimal
 
 # Now run with authentication enabled
 docker run -d -p 27017:27017 --name mongodb minimal-mongodb:latest
@@ -139,8 +141,9 @@ docker run -d -p 27017:27017 \
 
 Since this container is extremely minimal:
 - There are no debugging tools inside the container
+- There is no shell or MongoDB shell (mongosh)
 - Use `docker logs mongodb` to view MongoDB logs
-- Use MongoDB Compass or the MongoDB shell to interact with the database
+- Use MongoDB Compass for all database operations
 
 ## License
 

@@ -115,7 +115,33 @@ minimize_mongodb() {
   cp -r /usr/share/zoneinfo/UTC /mongodb-minimal/usr/share/zoneinfo/
   cp -r /usr/share/zoneinfo/Etc /mongodb-minimal/usr/share/zoneinfo/
 
-  # Create absolute minimal MongoDB configuration
+  # Start MongoDB temporarily to create admin user
+  mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb
+
+  # Verify MongoDB started correctly
+  if ! pgrep -x mongod > /dev/null; then
+    echo 'MongoDB failed to start!'
+    cat /var/log/mongodb/init.log
+    exit 1
+  fi
+
+  # Create a default admin user with supplied credentials during build
+  # This avoids requiring a shell script at runtime
+  mongod --eval "db = db.getSiblingDB(\"admin\"); db.createUser({user:\"${MONGODB_USERNAME}\", pwd:\"${MONGODB_PASSWORD}\", roles:[{role:\"root\", db:\"admin\"}]})"
+
+  # Create keyfile for authentication
+  mkdir -p /mongodb-minimal/etc/mongodb
+  openssl rand -base64 756 > /mongodb-minimal/etc/mongodb/keyfile
+  chmod 400 /mongodb-minimal/etc/mongodb/keyfile
+
+  # Stop MongoDB and copy the initialized data files
+  mongod --shutdown
+  
+  # Copy the pre-initialized data files to ensure admin user exists
+  mkdir -p /mongodb-minimal/var/lib/mongodb
+  cp -a /var/lib/mongodb/* /mongodb-minimal/var/lib/mongodb/
+
+  # Create absolute minimal MongoDB configuration with authentication enabled
   cat > /mongodb-minimal/etc/mongod.conf << EOF
 storage:
     dbPath: /var/lib/mongodb
@@ -132,7 +158,8 @@ processManagement:
     timeZoneInfo: /usr/share/zoneinfo
     fork: false
 security:
-    authorization: disabled
+    authorization: enabled
+    keyFile: /etc/mongodb/keyfile
 EOF
 
   # Create passwd entry for MongoDB user (uid 999 is common for mongodb)
@@ -142,55 +169,6 @@ EOF
   # Create an empty /etc/nsswitch.conf to avoid getpwnam issues
   echo "passwd: files" > /mongodb-minimal/etc/nsswitch.conf
   echo "group: files" >> /mongodb-minimal/etc/nsswitch.conf
-
-  # Instead of running MongoDB to create a user during build,
-  # we'll create an initialization script that will run on first container start
-  
-  # Create entrypoint script to initialize MongoDB on first run
-  mkdir -p /mongodb-minimal/usr/local/bin
-  cat > /mongodb-minimal/usr/local/bin/docker-entrypoint.sh << 'EOF'
-#!/bin/sh
-set -e
-
-# This script runs as mongodb user (uid 999)
-
-# Check if this is first run (no .initialized file)
-if [ ! -f /var/lib/mongodb/.initialized ]; then
-    echo "Initializing MongoDB for first run..."
-    
-    # Start mongod without auth for initial setup
-    mongod --dbpath /var/lib/mongodb --logpath /var/log/mongodb/init.log --fork --bind_ip 127.0.0.1
-    
-    # Wait for MongoDB to start
-    for i in {1..30}; do
-        if mongod --eval "db.adminCommand('ping')" >/dev/null 2>&1; then
-            break
-        fi
-        echo "Waiting for MongoDB to start... ($i/30)"
-        sleep 1
-    done
-    
-    # Create admin user
-    mongod --eval "db = db.getSiblingDB('admin'); db.createUser({user:'MONGODB_USERNAME_PLACEHOLDER', pwd:'MONGODB_PASSWORD_PLACEHOLDER', roles:[{role:'root', db:'admin'}]})"
-    
-    # Shut down MongoDB
-    mongod --dbpath /var/lib/mongodb --shutdown
-    
-    # Create initialized marker
-    touch /var/lib/mongodb/.initialized
-    echo "MongoDB initialization complete."
-fi
-
-# Start MongoDB with regular configuration
-exec mongod --config /etc/mongod.conf
-EOF
-
-  # Replace placeholders with actual values
-  sed -i "s/MONGODB_USERNAME_PLACEHOLDER/${MONGODB_USERNAME}/g" /mongodb-minimal/usr/local/bin/docker-entrypoint.sh
-  sed -i "s/MONGODB_PASSWORD_PLACEHOLDER/${MONGODB_PASSWORD}/g" /mongodb-minimal/usr/local/bin/docker-entrypoint.sh
-  
-  # Make the entrypoint script executable
-  chmod 755 /mongodb-minimal/usr/local/bin/docker-entrypoint.sh
 
   # Directly move files from minimal directory to root
   # This approach eliminates the need for extra binaries
@@ -217,8 +195,8 @@ EOF
 
   # Set proper permissions
   chmod 755 /usr/bin/mongod
-  mkdir -p /var/lib/mongodb /var/log/mongodb
-  chown -R 999:999 /var/lib/mongodb /var/log/mongodb
+  chmod 400 /etc/mongodb/keyfile
+  chown -R 999:999 /var/lib/mongodb /var/log/mongodb /etc/mongodb/keyfile
   
   echo "MongoDB minimization completed successfully."
 }
@@ -227,7 +205,7 @@ EOF
 print_docker_commit_options() {
   echo "===DOCKER_COMMIT_OPTIONS_START==="
   echo "--change='USER mongodb'"
-  echo "--change='ENTRYPOINT [\"/usr/local/bin/docker-entrypoint.sh\"]'"
+  echo "--change='CMD [\"mongod\", \"--config\", \"/etc/mongod.conf\"]'"
   echo "--change='EXPOSE 27017'"
   echo "--change='VOLUME [\"/var/lib/mongodb\", \"/var/log/mongodb\"]'"
   echo "--change='HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD [ \"mongod\", \"--eval\", \"db.adminCommand(\\\'ping\\\')\", \"--quiet\" ]'"

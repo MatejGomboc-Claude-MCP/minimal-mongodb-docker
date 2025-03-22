@@ -116,7 +116,11 @@ minimize_mongodb() {
   cp -r /usr/share/zoneinfo/Etc /mongodb-minimal/usr/share/zoneinfo/
 
   # Start MongoDB temporarily to create admin user
+  echo "Starting MongoDB to create admin user..."
   mongod --fork --logpath /var/log/mongodb/init.log --dbpath /var/lib/mongodb
+
+  # Wait for MongoDB to start properly
+  sleep 5
 
   # Verify MongoDB started correctly
   if ! pgrep -x mongod > /dev/null; then
@@ -126,40 +130,59 @@ minimize_mongodb() {
   fi
 
   # Create a default admin user with supplied credentials during build
-  # This avoids requiring a shell script at runtime
+  echo "Creating admin user: ${MONGODB_USERNAME}"
   mongod --eval "db = db.getSiblingDB(\"admin\"); db.createUser({user:\"${MONGODB_USERNAME}\", pwd:\"${MONGODB_PASSWORD}\", roles:[{role:\"root\", db:\"admin\"}]})"
 
   # Create keyfile for authentication
+  echo "Creating MongoDB keyfile..."
   mkdir -p /mongodb-minimal/etc/mongodb
   openssl rand -base64 756 > /mongodb-minimal/etc/mongodb/keyfile
   chmod 400 /mongodb-minimal/etc/mongodb/keyfile
 
   # Stop MongoDB and copy the initialized data files
-  mongod --shutdown
+  echo "Stopping MongoDB..."
+  mongod --dbpath /var/lib/mongodb --shutdown
+  
+  # Ensure MongoDB has completely stopped
+  echo "Waiting for MongoDB process to terminate..."
+  for i in {1..10}; do
+    if ! pgrep -x mongod > /dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  
+  # Forcefully terminate if still running
+  if pgrep -x mongod > /dev/null; then
+    echo "Warning: MongoDB did not shut down gracefully, terminating process..."
+    pkill -9 mongod || true
+    sleep 2
+  fi
   
   # Copy the pre-initialized data files to ensure admin user exists
+  echo "Copying initialized MongoDB data files..."
   mkdir -p /mongodb-minimal/var/lib/mongodb
-  cp -a /var/lib/mongodb/* /mongodb-minimal/var/lib/mongodb/
+  cp -a /var/lib/mongodb/* /mongodb-minimal/var/lib/mongodb/ 2>/dev/null || true
 
   # Create absolute minimal MongoDB configuration with authentication enabled
   cat > /mongodb-minimal/etc/mongod.conf << EOF
 storage:
-    dbPath: /var/lib/mongodb
-    journal:
-        enabled: true
+  dbPath: /var/lib/mongodb
+  journal:
+    enabled: true
 systemLog:
-    destination: file
-    path: /var/log/mongodb/mongod.log
-    logAppend: true
+  destination: file
+  path: /var/log/mongodb/mongod.log
+  logAppend: true
 net:
-    port: 27017
-    bindIp: 0.0.0.0
+  port: 27017
+  bindIp: 0.0.0.0
 processManagement:
-    timeZoneInfo: /usr/share/zoneinfo
-    fork: false
+  timeZoneInfo: /usr/share/zoneinfo
+  fork: false
 security:
-    authorization: enabled
-    keyFile: /etc/mongodb/keyfile
+  authorization: enabled
+  keyFile: /etc/mongodb/keyfile
 EOF
 
   # Create passwd entry for MongoDB user (uid 999 is common for mongodb)
@@ -170,24 +193,40 @@ EOF
   echo "passwd: files" > /mongodb-minimal/etc/nsswitch.conf
   echo "group: files" >> /mongodb-minimal/etc/nsswitch.conf
 
+  # Ensure the log directory exists
+  mkdir -p /mongodb-minimal/var/log/mongodb
+  chmod 755 /mongodb-minimal/var/log/mongodb
+  
   # Directly move files from minimal directory to root
   # This approach eliminates the need for extra binaries
   echo "Moving minimal files to root directly..."
   cd /mongodb-minimal
+
+  # Save current IFS, set to newline only to handle filenames with spaces
+  OLDIFS="$IFS"
+  IFS=$'\n'
   
   # For each directory under /mongodb-minimal, copy its contents to the root
   for dir in $(find . -mindepth 1 -maxdepth 1 -type d | cut -c 3-); do
     # Ensure target directory exists
     mkdir -p "/$dir"
     
-    # Move contents
-    cp -a "$dir"/* "/$dir/" 2>/dev/null || true
+    # Move contents - handle potential spaces in filenames
+    find "$dir" -mindepth 1 -print0 | while IFS= read -r -d $'\0' item; do
+      target_path="/${item#./}"
+      target_dir="$(dirname "/$target_path")"
+      mkdir -p "$target_dir"
+      cp -a "$item" "/$target_path" 2>/dev/null || true
+    done
   done
   
   # Move any files in the root of /mongodb-minimal
   for file in $(find . -maxdepth 1 -type f | cut -c 3-); do
     cp -a "$file" "/$file" 2>/dev/null || true
   done
+  
+  # Restore original IFS
+  IFS="$OLDIFS"
   
   # Return to root and remove the temporary directory
   cd /

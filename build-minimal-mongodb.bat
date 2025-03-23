@@ -24,9 +24,9 @@ echo Container created: %CONTAINER_ID%
 REM Check if container is running - use a more reliable method
 docker inspect --format="{{.State.Running}}" %CONTAINER_ID% | findstr "true" > NUL
 IF %ERRORLEVEL% NEQ 0 (
-  echo Container failed to start properly!
-  docker rm -f %CONTAINER_ID% > NUL 2>&1
-  exit /b 1
+    echo Container failed to start properly!
+    docker rm -f %CONTAINER_ID% > NUL 2>&1
+    exit /b 1
 )
 
 REM Step 2: Copy the minimizer script to the container
@@ -40,17 +40,17 @@ docker exec %CONTAINER_ID% bash -c "apt-get update && apt-get install -y dos2uni
 REM Step 3: Run the installation and minimization process
 echo Installing and minimizing MongoDB...
 docker exec -e MONGODB_VERSION=%MONGODB_VERSION% ^
-           -e MONGODB_USERNAME=%MONGODB_USERNAME% ^
-           -e MONGODB_PASSWORD=%MONGODB_PASSWORD% ^
-           -e OPERATION=all ^
-           %CONTAINER_ID% bash -c "/tmp/mongodb-minimizer.sh"
+    -e MONGODB_USERNAME=%MONGODB_USERNAME% ^
+    -e MONGODB_PASSWORD=%MONGODB_PASSWORD% ^
+    -e OPERATION=all ^
+    %CONTAINER_ID% bash -c "/tmp/mongodb-minimizer.sh"
 
 REM Check for errors
 IF %ERRORLEVEL% NEQ 0 (
-  echo MongoDB installation or minimization failed!
-  docker stop %CONTAINER_ID%
-  docker rm %CONTAINER_ID%
-  exit /b 1
+    echo MongoDB installation or minimization failed!
+    docker stop %CONTAINER_ID%
+    docker rm %CONTAINER_ID%
+    exit /b 1
 )
 
 REM Step 4: Extract Docker commit options
@@ -62,17 +62,17 @@ REM Step 5: Commit container with extracted options
 echo Creating minimal MongoDB image...
 SET COMMIT_CMD=docker commit
 FOR /F "tokens=*" %%a IN ('findstr /v "===" %TEMP_COMMIT_FILE% ^| findstr /v "^$"') DO (
-  SET COMMIT_CMD=!COMMIT_CMD! %%a
+    SET COMMIT_CMD=!COMMIT_CMD! %%a
 )
 SET COMMIT_CMD=!COMMIT_CMD! %CONTAINER_ID% minimal-mongodb:latest
 %COMMIT_CMD%
 
 IF %ERRORLEVEL% NEQ 0 (
-  echo Docker commit failed!
-  docker stop %CONTAINER_ID%
-  docker rm %CONTAINER_ID%
-  del %TEMP_COMMIT_FILE%
-  exit /b 1
+    echo Docker commit failed!
+    docker stop %CONTAINER_ID%
+    docker rm %CONTAINER_ID%
+    del %TEMP_COMMIT_FILE%
+    exit /b 1
 )
 
 REM Step 6: Clean up

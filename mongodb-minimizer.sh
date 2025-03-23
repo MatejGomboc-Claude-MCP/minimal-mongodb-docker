@@ -3,10 +3,10 @@ set -e
 
 # Ensure errors are properly reported
 handle_minimizer_error() {
-  local error_code=$?
-  echo "Error: Minimizer script failed with exit code $error_code"
-  echo "Failed at step: $1"
-  exit $error_code
+    local error_code=$?
+    echo "Error: Minimizer script failed with exit code $error_code"
+    echo "Failed at step: $1"
+    exit $error_code
 }
 
 # Set trap to catch errors
@@ -20,47 +20,47 @@ OPERATION="${OPERATION:-all}"
 
 # Function to install MongoDB
 install_mongodb() {
-  echo "Installing MongoDB ${MONGODB_VERSION}..."
-  
-  # Extract the major.minor version for the repository
-  MONGODB_MAJOR_MINOR="$(echo "${MONGODB_VERSION}" | cut -d. -f1,2)"
-  
-  # Update package information
-  apt-get update
-  
-  # Install required packages
-  apt-get install -y wget gnupg binutils curl procps openssl
-  
-  # Import MongoDB GPG key
-  curl -fsSL "https://www.mongodb.org/static/pgp/server-${MONGODB_MAJOR_MINOR}.asc" | \
-    gpg -o "/usr/share/keyrings/mongodb-server-${MONGODB_MAJOR_MINOR}.gpg" --dearmor
-  
-  # Add MongoDB repository
-  echo "deb [signed-by=/usr/share/keyrings/mongodb-server-${MONGODB_MAJOR_MINOR}.gpg] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/${MONGODB_MAJOR_MINOR} main" | \
-    tee "/etc/apt/sources.list.d/mongodb-org-${MONGODB_MAJOR_MINOR}.list"
-  
-  # Update package list with MongoDB repository
-  apt-get update
-  
-  # Install MongoDB server
-  apt-get install -y --no-install-recommends mongodb-org-server mongodb-mongosh
-  
-  # Clean up package cache
-  apt-get clean
-  
-  # Verify MongoDB installation
-  if ! command -v mongod > /dev/null; then
-    echo "MongoDB installation failed - mongod command not found!"
-    exit 1
-  fi
-  
-  echo "MongoDB ${MONGODB_VERSION} installed successfully."
+    echo "Installing MongoDB ${MONGODB_VERSION}..."
+
+    # Extract the major.minor version for the repository
+    MONGODB_MAJOR_MINOR="$(echo "${MONGODB_VERSION}" | cut -d. -f1,2)"
+
+    # Update package information
+    apt-get update
+
+    # Install required packages
+    apt-get install -y wget gnupg binutils curl procps openssl
+
+    # Import MongoDB GPG key
+    curl -fsSL "https://www.mongodb.org/static/pgp/server-${MONGODB_MAJOR_MINOR}.asc" | \
+        gpg -o "/usr/share/keyrings/mongodb-server-${MONGODB_MAJOR_MINOR}.gpg" --dearmor
+
+    # Add MongoDB repository
+    echo "deb [signed-by=/usr/share/keyrings/mongodb-server-${MONGODB_MAJOR_MINOR}.gpg] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/${MONGODB_MAJOR_MINOR} main" | \
+        tee "/etc/apt/sources.list.d/mongodb-org-${MONGODB_MAJOR_MINOR}.list"
+
+    # Update package list with MongoDB repository
+    apt-get update
+
+    # Install MongoDB server
+    apt-get install -y --no-install-recommends mongodb-org-server mongodb-mongosh
+
+    # Clean up package cache
+    apt-get clean
+
+    # Verify MongoDB installation
+    if ! command -v mongod > /dev/null; then
+        echo "MongoDB installation failed - mongod command not found!"
+        exit 1
+    fi
+
+    echo "MongoDB ${MONGODB_VERSION} installed successfully."
 }
 
 # Function to perform minimization
 minimize_mongodb() {
   echo "Starting MongoDB minimization process..."
-  
+
   # Test MongoDB installation
   if ! mongod --version; then
     echo 'MongoDB installation failed!'
@@ -136,7 +136,7 @@ minimize_mongodb() {
   else
     echo "WARNING: UTC timezone data not found!"
   fi
-  
+
   if [ -d /usr/share/zoneinfo/Etc ]; then
     cp -r /usr/share/zoneinfo/Etc "$TEMP_DIR/usr/share/zoneinfo/"
   else
@@ -180,11 +180,11 @@ minimize_mongodb() {
     cat /var/log/mongodb/init.log
     exit 1
   fi
-  
+
   # Get the MongoDB process ID
   MONGODB_PID=$(pgrep -x mongod)
   echo "MongoDB started with PID: $MONGODB_PID"
-  
+
   # Wait for MongoDB to become available by using netcat to check the port
   echo "Waiting for MongoDB to become available..."
   timeout=30
@@ -199,22 +199,22 @@ minimize_mongodb() {
     printf "."
   done
   echo ""
-  
+
   if [ "$started" != "true" ]; then
     echo "ERROR: MongoDB port is not open after $timeout seconds!"
     cat /var/log/mongodb/init.log
-    
+
     # Check if the MongoDB process is still running
     if pgrep -x mongod > /dev/null; then
       echo "Note: MongoDB process is running, but port is not accessible."
-      
+
       # Try to get MongoDB server status directly from log file
       echo "Server log extract:"
       tail -n 20 /var/log/mongodb/init.log
     else
       echo "ERROR: MongoDB process is not running!"
     fi
-    
+
     exit 1
   fi
 
@@ -223,7 +223,7 @@ minimize_mongodb() {
   # Properly escape any special characters in username/password
   ESCAPED_USERNAME=$(printf '%s' "${MONGODB_USERNAME}" | sed 's/"/\\"/g')
   ESCAPED_PASSWORD=$(printf '%s' "${MONGODB_PASSWORD}" | sed 's/"/\\"/g')
-  
+
   # Try to use mongosh if available
   if command -v mongosh > /dev/null; then
     if ! mongosh --host 127.0.0.1 --eval "db = db.getSiblingDB('admin'); db.createUser({user:'${ESCAPED_USERNAME}', pwd:'${ESCAPED_PASSWORD}', roles:[{role:'root', db:'admin'}]})"; then
@@ -248,17 +248,17 @@ minimize_mongodb() {
     echo "WARNING: Could not terminate MongoDB process by PID. Trying pkill..."
     pkill -9 -x mongod || true
   fi
-  
+
   # Wait a moment to ensure the process is fully terminated
   sleep 3
-  
+
   # Final check to ensure MongoDB is stopped
   if pgrep -x mongod > /dev/null; then
     echo "WARNING: MongoDB is still running after termination attempts. This might affect file copying."
   else
     echo "MongoDB process is fully terminated."
   fi
-  
+
   # Copy the pre-initialized data files to ensure admin user exists
   echo "Copying initialized MongoDB data files..."
   mkdir -p "$TEMP_DIR/var/lib/mongodb"
@@ -299,32 +299,32 @@ EOF
   # Ensure the log directory exists and has proper permissions
   mkdir -p "$TEMP_DIR/var/log/mongodb"
   chmod 750 "$TEMP_DIR/var/log/mongodb"
-  
+
   # Set proper permissions
   echo "Setting final permissions..."
   chmod 755 "$TEMP_DIR/usr/bin/mongod"
   chmod 400 "$TEMP_DIR/etc/mongodb/keyfile"
-  
+
   # Create a tar archive of all files to preserve permissions
   echo "Creating tar archive of all files..."
   cd "$TEMP_DIR" || { echo "ERROR: Cannot change to temporary directory"; exit 1; }
   tar -cf /tmp/mongodb-minimal.tar .
-  
+
   # Extract the tar archive to the root filesystem
   echo "Extracting files to the root filesystem..."
   cd / || { echo "ERROR: Cannot change to root directory"; exit 1; }
   tar -xf /tmp/mongodb-minimal.tar
-  
+
   # Set final ownership
   echo "Setting final ownership..."
   chown -R 999:999 /var/lib/mongodb /var/log/mongodb /etc/mongodb/keyfile
-  
+
   # Clean up temporary files
   rm -f /tmp/mongodb-minimal.tar
   rm -rf "$TEMP_DIR"
-  
+
   echo "MongoDB minimization completed successfully."
-  
+
   # Verify the installation is functional
   echo "Verifying the minimized MongoDB installation..."
   if [ -x "/usr/bin/mongod" ]; then
@@ -333,18 +333,18 @@ EOF
     echo "ERROR: MongoDB binary is missing or not executable!"
     exit 1
   fi
-  
+
   # Check for critical files
   if [ ! -f "/etc/mongod.conf" ]; then
     echo "ERROR: MongoDB configuration file is missing!"
     exit 1
   fi
-  
+
   if [ ! -f "/etc/mongodb/keyfile" ]; then
     echo "ERROR: MongoDB keyfile is missing!"
     exit 1
   fi
-  
+
   # Verify library dependencies can be resolved
   echo "Checking library dependencies..."
   if ! ldd /usr/bin/mongod >/dev/null 2>&1; then
@@ -352,7 +352,7 @@ EOF
     ldd /usr/bin/mongod
     exit 1
   fi
-  
+
   echo "Verification complete. Minimized MongoDB is ready to be packaged."
 }
 
